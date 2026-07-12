@@ -1,0 +1,11 @@
+{
+  "name": "custom-import-profit-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/local-server.mjs",
+    "build": "node scripts/verify-app.mjs",
+    "start": "node scripts/local-server.mjs"
+  }
+}

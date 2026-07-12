@@ -1,0 +1,4 @@
+analysis/
+node_modules/
+.vercel/
+*.log
