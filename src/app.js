@@ -1,5 +1,27 @@
 const STORAGE_KEY = "custom-import-profit-state-v1";
 
+const defaultDashboardCards = [
+  "freight",
+  "insurance",
+  "basicCustoms",
+  "sws",
+  "igst",
+  "importCost",
+  "landingCost",
+  "gstAmazon",
+  "gstAmazonDeal",
+  "settlementAmazon",
+  "settlementAmazonDeal",
+  "profitAmazon",
+  "profitAmazonDeal",
+  "marginAmazon",
+  "marginAmazonDeal",
+  "roiAmazonLanding",
+  "roiAmazonDealLanding",
+  "roiAmazonProductCost",
+  "roiAmazonDealProductCost",
+];
+
 const defaultSettings = {
   usdRate: 95.2,
   freightPerKgUsd: 4.5,
@@ -8,22 +30,35 @@ const defaultSettings = {
   swsRate: 10,
   warehouseRate: 2,
   fxUpdatedAt: "Manual",
+  lastCountryOfOrigin: "China",
+  dashboardCards: [...defaultDashboardCards],
 };
+
+const defaultCommissionMaster = [
+  { category: "Mobile Accessories", commissionRate: 0.105 },
+];
 
 const defaultProducts = [
   {
     id: crypto.randomUUID(),
     productName: "iPhone 17 Case",
+    category: "Mobile Accessories",
     design: "Alles",
     sku: "ABCD",
     asin: "1234ABC",
+    hsnCode: "",
+    procurementType: "Import",
     productCostUsd: 9.5,
+    productCostInr: 0,
     weightKg: 0.05,
     countryOfOrigin: "China",
     cooBenefit: "No",
+    bcdRate: 15,
     gstRate: 18,
     overheadCostInr: 100,
     amazonSellingPriceInr: 2799,
+    dealPriceRate: 0,
+    dealPriceInr: 2799,
     commissionRate: 0.105,
     pickPackFeeInr: 17,
     weightHandlingFeeInr: 42,
@@ -33,16 +68,23 @@ const defaultProducts = [
   {
     id: crypto.randomUUID(),
     productName: "iPhone 17 Pro Case",
+    category: "Mobile Accessories",
     design: "Fusion",
     sku: "DDSF",
     asin: "4323DSFD",
+    hsnCode: "",
+    procurementType: "Import",
     productCostUsd: 4.5,
+    productCostInr: 0,
     weightKg: 0.07,
     countryOfOrigin: "Korea",
     cooBenefit: "Yes",
+    bcdRate: 15,
     gstRate: 18,
     overheadCostInr: 100,
     amazonSellingPriceInr: 1699,
+    dealPriceRate: 0,
+    dealPriceInr: 1699,
     commissionRate: 0.105,
     pickPackFeeInr: 17,
     weightHandlingFeeInr: 42,
@@ -56,10 +98,14 @@ const fieldGroups = [
     title: "Product",
     fields: [
       ["productName", "Product name", "text"],
+      ["category", "Category", "category"],
       ["design", "Design", "text"],
       ["sku", "SKU", "text"],
       ["asin", "ASIN", "text"],
+      ["hsnCode", "HSN Code", "text"],
+      ["procurementType", "Procurement type", "select", ["Import", "India"]],
       ["productCostUsd", "Product cost / unit", "number", "USD"],
+      ["productCostInr", "India product cost / unit", "number", "INR"],
     ],
   },
   {
@@ -69,19 +115,22 @@ const fieldGroups = [
   {
     title: "Customs",
     fields: [
-      ["countryOfOrigin", "Country of origin", "text"],
+      ["countryOfOrigin", "Country of origin", "country"],
       ["cooBenefit", "COO benefit", "select", ["No", "Yes"]],
+      ["bcdRate", "BCD rate", "number", "%"],
       ["gstRate", "GST rate", "number", "%"],
     ],
   },
   {
-    title: "Landing",
+    title: "Overhead",
     fields: [["overheadCostInr", "Overhead cost", "number", "INR"]],
   },
   {
     title: "Amazon",
     fields: [
       ["amazonSellingPriceInr", "Selling price", "number", "INR"],
+      ["dealPriceRate", "Deal discount %", "percentDecimal", "%"],
+      ["dealPriceInr", "Deal price", "number", "INR"],
       ["commissionRate", "Commission", "percentDecimal", "%"],
       ["pickPackFeeInr", "Pick pack fee", "number", "INR"],
       ["weightHandlingFeeInr", "Weight handling fee", "number", "INR"],
@@ -91,19 +140,138 @@ const fieldGroups = [
   },
 ];
 
+const productSearchFilters = [
+  { value: "all", label: "All fields" },
+  { value: "productName", label: "Product" },
+  { value: "category", label: "Category" },
+  { value: "sku", label: "SKU" },
+  { value: "asin", label: "ASIN" },
+  { value: "hsnCode", label: "HSN Code" },
+  { value: "design", label: "Design" },
+  { value: "procurementType", label: "Procurement" },
+  { value: "countryOfOrigin", label: "Country" },
+  { value: "cooBenefit", label: "COO benefit" },
+];
+
+const uploadHeaderAliases = {
+  product: "productName",
+  productname: "productName",
+  category: "category",
+  design: "design",
+  sku: "sku",
+  asin: "asin",
+  hsn: "hsnCode",
+  hsncode: "hsnCode",
+  procurement: "procurementType",
+  procurementtype: "procurementType",
+  procurementsource: "procurementType",
+  productsource: "procurementType",
+  source: "procurementType",
+  productcost: "productCostUsd",
+  productcostusd: "productCostUsd",
+  productcostunit: "productCostUsd",
+  productcostperunit: "productCostUsd",
+  costusd: "productCostUsd",
+  productcostinr: "productCostInr",
+  productcostrupees: "productCostInr",
+  productcostrs: "productCostInr",
+  costinr: "productCostInr",
+  costrs: "productCostInr",
+  weight: "weightKg",
+  weightkg: "weightKg",
+  weightunit: "weightKg",
+  weightperunit: "weightKg",
+  country: "countryOfOrigin",
+  countryoforigin: "countryOfOrigin",
+  coo: "cooBenefit",
+  coobenefit: "cooBenefit",
+  bcd: "bcdRate",
+  bcdrate: "bcdRate",
+  gstrate: "gstRate",
+  gst: "gstRate",
+  sellingprice: "amazonSellingPriceInr",
+  sellingpriceinr: "amazonSellingPriceInr",
+  amazonsellingprice: "amazonSellingPriceInr",
+  dealdiscount: "dealPriceRate",
+  dealdiscountrate: "dealPriceRate",
+  dealdiscountpercent: "dealPriceRate",
+  dealprice: "dealPriceInr",
+  dealpriceinr: "dealPriceInr",
+};
+
+const dashboardCardDefinitions = [
+  { id: "freight", label: "Freight / unit", value: (calc) => currency(calc.freightUsd, "USD", 3) },
+  { id: "insurance", label: "Insurance / unit", value: (calc) => currency(calc.insuranceUsd, "USD", 3) },
+  {
+    id: "basicCustoms",
+    label: "Basic customs",
+    value: (calc) => `${currency(calc.basicCustomDutyUsd, "USD", 3)} - ${currency(calc.basicCustomDutyInr)}`,
+  },
+  { id: "sws", label: "SWS", value: (calc) => `${currency(calc.swsUsd, "USD", 3)} - ${currency(calc.swsInr)}` },
+  { id: "igst", label: "IGST", value: (calc) => `${currency(calc.igstUsd, "USD", 3)} - ${currency(calc.igstInr)}` },
+  {
+    id: "importCost",
+    label: "Import cost",
+    value: (calc) => `${currency(calc.importCostUsd, "USD", 3)} - ${currency(calc.importCostInr)}`,
+  },
+  { id: "landingCost", label: "Landing cost", value: (calc) => currency(calc.landingCostInr) },
+  { id: "gstAmazon", label: "GST Amazon", value: (calc) => currency(calc.gstAmazonInr) },
+  { id: "gstAmazonDeal", label: "GST Amazon Deal", value: (calc) => currency(calc.gstAmazonDealInr) },
+  { id: "settlementAmazon", label: "Settlement Amazon", value: (calc) => currency(calc.settlementAmazonInr) },
+  { id: "settlementAmazonDeal", label: "Settlement Amazon Deal", value: (calc) => currency(calc.settlementAmazonDealInr) },
+  {
+    id: "profitAmazon",
+    label: "Profit Amazon",
+    value: (calc) => currency(calc.amazonProfitInr),
+    tone: (calc) => (calc.amazonProfitInr >= 0 ? "good" : "bad"),
+  },
+  {
+    id: "profitAmazonDeal",
+    label: "Profit Amazon Deal",
+    value: (calc) => currency(calc.amazonDealProfitInr),
+    tone: (calc) => (calc.amazonDealProfitInr >= 0 ? "good" : "bad"),
+  },
+  { id: "marginAmazon", label: "Margin Amazon", value: (calc) => percent(calc.marginAmazon) },
+  { id: "marginAmazonDeal", label: "Margin Amazon Deal", value: (calc) => percent(calc.marginAmazonDeal) },
+  { id: "roiAmazonLanding", label: "ROI Amazon on landing", value: (calc) => percent(calc.roiAmazon) },
+  { id: "roiAmazonDealLanding", label: "ROI Amazon Deal on landing", value: (calc) => percent(calc.roiAmazonDeal) },
+  { id: "roiAmazonProductCost", label: "ROI Amazon on product cost", value: (calc) => percent(calc.roiProductCostAmazon) },
+  {
+    id: "roiAmazonDealProductCost",
+    label: "ROI Amazon Deal on product cost",
+    value: (calc) => percent(calc.roiProductCostAmazonDeal),
+  },
+];
+
 let state = loadState();
 let selectedProductId = state.products[0]?.id ?? null;
 let activeGroup = "Product";
 let exchangeStatus = "";
+let productSearchQuery = "";
+let productFilterField = "all";
+let uploadStatus = "";
+let uploadStatusTone = "";
+let selectedMasterCategoryId = state.commissionMaster[0]?.id ?? null;
+let masterDraft = null;
+let masterDraftMessage = "";
+let productDraft = null;
+let productDraftMode = "";
+let productDraftOriginalId = null;
+let productSaveMessage = "";
 
 function loadState() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (stored?.settings && Array.isArray(stored?.products) && stored.products.length) {
+      const settings = { ...defaultSettings, ...stored.settings };
+      settings.dashboardCards = normalizeDashboardCards(settings.dashboardCards);
       return {
-        settings: { ...defaultSettings, ...stored.settings },
-        products: stored.products.map((product) => ({
+        settings,
+        commissionMaster: normalizeCommissionMaster(stored.commissionMaster, stored.products),
+        products: stored.products.map((product) => normalizeProduct({
           ...product,
+          category: product.category || "",
+          bcdRate: product.bcdRate ?? defaultSettings.bcdRate,
           id: product.id || crypto.randomUUID(),
         })),
       };
@@ -113,8 +281,9 @@ function loadState() {
   }
 
   return {
-    settings: { ...defaultSettings },
-    products: defaultProducts.map((product) => ({ ...product, id: crypto.randomUUID() })),
+    settings: { ...defaultSettings, dashboardCards: [...defaultDashboardCards] },
+    commissionMaster: cloneDefaultCommissionMaster(),
+    products: defaultProducts.map((product) => normalizeProduct({ ...product, id: crypto.randomUUID() })),
   };
 }
 
@@ -147,41 +316,606 @@ function safeNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function calculateProduct(product, settings = state.settings) {
-  const productCostUsd = safeNumber(product.productCostUsd);
-  const weightKg = safeNumber(product.weightKg);
-  const gstRate = safeNumber(product.gstRate);
-  const usdRate = safeNumber(settings.usdRate);
-  const freightUsd = safeNumber(settings.freightPerKgUsd) * weightKg;
-  const insuranceUsd = (productCostUsd + freightUsd) * (safeNumber(settings.insuranceRate) / 100);
-  const customsBaseUsd = productCostUsd + freightUsd + insuranceUsd;
-  const hasCooBenefit = String(product.cooBenefit).toLowerCase() === "yes";
-  const basicCustomDutyUsd = hasCooBenefit
-    ? 0
-    : customsBaseUsd * (safeNumber(settings.bcdRate) / 100);
-  const swsUsd = basicCustomDutyUsd * (safeNumber(settings.swsRate) / 100);
-  const igstUsd =
-    (productCostUsd + freightUsd + insuranceUsd + basicCustomDutyUsd + swsUsd) *
-    (gstRate / 100);
-  const importCostUsd =
-    productCostUsd + freightUsd + insuranceUsd + basicCustomDutyUsd + swsUsd;
-  const importCostInr = importCostUsd * usdRate;
-  const landingCostInr =
-    importCostInr + importCostInr * (safeNumber(settings.warehouseRate) / 100) + safeNumber(product.overheadCostInr);
+function normalizeProcurementType(value) {
+  return String(value ?? "").trim().toLowerCase() === "india" ? "India" : "Import";
+}
+
+function isIndiaProcurement(product) {
+  return normalizeProcurementType(product.procurementType) === "India";
+}
+
+const indiaProcurementDisabledFields = new Set(["countryOfOrigin", "cooBenefit", "bcdRate"]);
+
+function applyIndiaProcurementDefaults(product) {
+  if (!isIndiaProcurement(product)) return product;
+  product.productCostUsd = 0;
+  product.countryOfOrigin = "India";
+  product.cooBenefit = "No";
+  product.bcdRate = 0;
+  return product;
+}
+
+function isProductFieldDisabled(product, key) {
+  return isIndiaProcurement(product) && indiaProcurementDisabledFields.has(key);
+}
+
+function roundCurrencyValue(value) {
+  return Math.round(safeNumber(value) * 100) / 100;
+}
+
+function hasValue(value) {
+  return value !== undefined && value !== null && value !== "";
+}
+
+function normalizeDashboardCards(cardIds) {
+  if (!Array.isArray(cardIds)) return [...defaultDashboardCards];
+  const validIds = new Set(dashboardCardDefinitions.map((card) => card.id));
+  return [...new Set(cardIds)].filter((cardId) => validIds.has(cardId));
+}
+
+function getVisibleDashboardCards() {
+  const selectedIds = new Set(normalizeDashboardCards(state.settings.dashboardCards));
+  return dashboardCardDefinitions.filter((card) => selectedIds.has(card.id));
+}
+
+function normalizeProduct(product) {
+  const normalized = { ...product };
+  normalized.procurementType = normalizeProcurementType(normalized.procurementType);
+  normalized.productCostInr = safeNumber(normalized.productCostInr);
+  applyIndiaProcurementDefaults(normalized);
+  const sellingPriceInr = safeNumber(normalized.amazonSellingPriceInr);
+
+  if (!hasValue(normalized.dealPriceRate) && !hasValue(normalized.dealPriceInr)) {
+    normalized.dealPriceRate = 0;
+    normalized.dealPriceInr = sellingPriceInr;
+  } else if (!hasValue(normalized.dealPriceInr)) {
+    normalized.dealPriceRate = safeNumber(normalized.dealPriceRate);
+    normalized.dealPriceInr = roundCurrencyValue(
+      sellingPriceInr * (1 - normalized.dealPriceRate),
+    );
+  } else if (!hasValue(normalized.dealPriceRate)) {
+    normalized.dealPriceInr = safeNumber(normalized.dealPriceInr);
+    normalized.dealPriceRate = sellingPriceInr
+      ? (sellingPriceInr - normalized.dealPriceInr) / sellingPriceInr
+      : 0;
+  } else {
+    normalized.dealPriceInr = safeNumber(normalized.dealPriceInr);
+    normalized.dealPriceRate = sellingPriceInr
+      ? (sellingPriceInr - normalized.dealPriceInr) / sellingPriceInr
+      : safeNumber(normalized.dealPriceRate);
+  }
+
+  return normalized;
+}
+
+function createNewProductDraft() {
+  const draft = normalizeProduct({
+    ...defaultProducts[0],
+    id: crypto.randomUUID(),
+    productName: "New Product",
+    category: getLatestMasterCategory(),
+    design: "",
+    sku: "",
+    asin: "",
+    hsnCode: "",
+    procurementType: "Import",
+    productCostInr: 0,
+    countryOfOrigin: getLatestCountryOfOrigin(),
+    bcdRate: defaultSettings.bcdRate,
+  });
+  applyCommissionForProductCategory(draft);
+  return draft;
+}
+
+function createProductEditDraft(product) {
+  return normalizeProduct({ ...product });
+}
+
+function isDraftProduct(product) {
+  return Boolean(productDraft && product?.id === productDraft.id);
+}
+
+function isNewProductDraft() {
+  return productDraftMode === "new";
+}
+
+function getDraftProductLabel() {
+  return isNewProductDraft() ? "New Product Draft" : "Unsaved Product Changes";
+}
+
+function getSelectedProduct() {
+  if (productDraft?.id === selectedProductId) {
+    return productDraft;
+  }
+
+  return state.products.find((product) => product.id === selectedProductId) || state.products[0] || null;
+}
+
+function getListedProducts() {
+  if (!productDraft) return state.products;
+  if (isNewProductDraft()) return [productDraft, ...state.products];
+
+  return state.products.map((product) =>
+    product.id === productDraftOriginalId ? productDraft : product,
+  );
+}
+
+function getProductListCountLabel(visibleCount = getListedProducts().length) {
+  const totalCount = getListedProducts().length;
+  const suffix = productDraft ? (isNewProductDraft() ? " including draft" : " with unsaved changes") : "";
+  return visibleCount === totalCount
+    ? `${totalCount} products${suffix}`
+    : `${visibleCount} of ${totalCount} products${suffix}`;
+}
+
+function resetProductDraft() {
+  productDraft = null;
+  productDraftMode = "";
+  productDraftOriginalId = null;
+}
+
+function getEditableProduct() {
+  if (productDraft?.id === selectedProductId) {
+    return productDraft;
+  }
+
+  const savedProduct = state.products.find((product) => product.id === selectedProductId);
+  if (!savedProduct) return null;
+
+  productDraft = createProductEditDraft(savedProduct);
+  productDraftMode = "edit";
+  productDraftOriginalId = savedProduct.id;
+  return productDraft;
+}
+
+function normalizeUniqueCode(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getProductIdentityLabel(product) {
+  return product.productName || product.sku || product.asin || "another product";
+}
+
+function getDuplicateProductMessage(duplicate) {
+  if (!duplicate) return "";
+  return `Duplicate ${duplicate.label} "${duplicate.value}" already exists in ${getProductIdentityLabel(duplicate.product)}. Product not saved.`;
+}
+
+function getIgnoredProductIdForValidation(product) {
+  if (isDraftProduct(product)) {
+    return isNewProductDraft() ? null : productDraftOriginalId;
+  }
+  return product?.id ?? null;
+}
+
+function getProductUniquenessMessage(product) {
+  return getDuplicateProductMessage(
+    findDuplicateProductCode(product, state.products, getIgnoredProductIdForValidation(product)),
+  );
+}
+
+function updateProductMessage(message) {
+  const messageBox = document.querySelector("[data-product-message]");
+  if (messageBox) {
+    messageBox.textContent = message;
+    messageBox.hidden = !message;
+  }
+
+  const saveButton = document.querySelector('[data-action="save-product"]');
+  if (saveButton) {
+    saveButton.disabled = Boolean(message);
+  }
+}
+
+function getDeleteName(value, fallback) {
+  return String(value || "").trim() || fallback;
+}
+
+function confirmProductDelete(product) {
+  const productName = getDeleteName(product?.productName, "this product");
+  return window.confirm(`Delete ${productName}?\nThis cannot be undone.`);
+}
+
+function confirmMasterCategoryDelete(row) {
+  const categoryName = getDeleteName(row?.category, "this category");
+  return window.confirm(`Delete ${categoryName}?\nSave Master Data to keep this change.`);
+}
+
+function findDuplicateProductCode(product, products = state.products, ignoredProductId = null) {
+  const checks = [
+    ["sku", "SKU"],
+    ["asin", "ASIN"],
+  ];
+
+  for (const [field, label] of checks) {
+    const code = normalizeUniqueCode(product[field]);
+    if (!code) continue;
+    const duplicateProduct = products.find((item) =>
+      item.id !== ignoredProductId && normalizeUniqueCode(item[field]) === code,
+    );
+    if (duplicateProduct) {
+      return { field, label, value: product[field], product: duplicateProduct };
+    }
+  }
+
+  return null;
+}
+
+function validateUniqueProductCodes(products, existingProducts = state.products) {
+  const seen = {
+    sku: new Map(),
+    asin: new Map(),
+  };
+
+  existingProducts.forEach((product) => {
+    ["sku", "asin"].forEach((field) => {
+      const code = normalizeUniqueCode(product[field]);
+      if (code && !seen[field].has(code)) {
+        seen[field].set(code, product);
+      }
+    });
+  });
+
+  for (const product of products) {
+    for (const [field, label] of [["sku", "SKU"], ["asin", "ASIN"]]) {
+      const code = normalizeUniqueCode(product[field]);
+      if (!code) continue;
+      const duplicateProduct = seen[field].get(code);
+      if (duplicateProduct && duplicateProduct.id !== product.id) {
+        return { field, label, value: product[field], product: duplicateProduct };
+      }
+      seen[field].set(code, product);
+    }
+  }
+
+  return null;
+}
+
+function findUploadProductMatch(product, products) {
+  const matches = products.filter((item) => {
+    const skuMatches = normalizeUniqueCode(product.sku) &&
+      normalizeUniqueCode(item.sku) === normalizeUniqueCode(product.sku);
+    const asinMatches = normalizeUniqueCode(product.asin) &&
+      normalizeUniqueCode(item.asin) === normalizeUniqueCode(product.asin);
+    return skuMatches || asinMatches;
+  });
+  const uniqueMatches = [...new Map(matches.map((item) => [item.id, item])).values()];
+
+  if (uniqueMatches.length > 1) {
+    throw new Error(
+      `Excel row for ${getProductIdentityLabel(product)} matches more than one saved product. Check SKU and ASIN before upload.`,
+    );
+  }
+
+  return uniqueMatches[0] || null;
+}
+
+function mergeUploadedProduct(existingProduct, uploadedProduct) {
+  const fieldsFromExcel = [
+    "productName",
+    "category",
+    "design",
+    "sku",
+    "asin",
+    "hsnCode",
+    "procurementType",
+    "productCostUsd",
+    "productCostInr",
+    "weightKg",
+    "countryOfOrigin",
+    "cooBenefit",
+    "bcdRate",
+    "gstRate",
+    "amazonSellingPriceInr",
+    "dealPriceRate",
+    "dealPriceInr",
+  ];
+  const merged = { ...existingProduct, id: existingProduct.id };
+
+  fieldsFromExcel.forEach((field) => {
+    merged[field] = uploadedProduct[field];
+  });
+
+  const normalized = normalizeProduct(merged);
+  applyCommissionForProductCategory(normalized);
+  return normalized;
+}
+
+function applyUploadedProducts(products) {
+  let addedCount = 0;
+  let updatedCount = 0;
+  const touchedProducts = [];
+
+  products.forEach((uploadedProduct) => {
+    const existingProduct = findUploadProductMatch(uploadedProduct, state.products);
+
+    if (existingProduct) {
+      const productIndex = state.products.findIndex((product) => product.id === existingProduct.id);
+      const updatedProduct = mergeUploadedProduct(existingProduct, uploadedProduct);
+      state.products[productIndex] = updatedProduct;
+      touchedProducts.push(updatedProduct);
+      updatedCount += 1;
+      return;
+    }
+
+    state.products.push(uploadedProduct);
+    touchedProducts.push(uploadedProduct);
+    addedCount += 1;
+  });
+
+  return { addedCount, updatedCount, touchedProducts };
+}
+
+function saveProductDraft() {
+  if (!productDraft) return;
+  const savedProduct = normalizeProduct({ ...productDraft });
+  applyCommissionForProductCategory(savedProduct);
+  const duplicate = findDuplicateProductCode(
+    savedProduct,
+    state.products,
+    isNewProductDraft() ? null : productDraftOriginalId,
+  );
+  if (duplicate) {
+    productSaveMessage = getDuplicateProductMessage(duplicate);
+    render();
+    return;
+  }
+  if (isNewProductDraft()) {
+    state.products.push(savedProduct);
+  } else {
+    const productIndex = state.products.findIndex((product) => product.id === productDraftOriginalId);
+    if (productIndex === -1) return;
+    state.products[productIndex] = savedProduct;
+  }
+  if (String(savedProduct.countryOfOrigin || "").trim()) {
+    state.settings.lastCountryOfOrigin = savedProduct.countryOfOrigin;
+  }
+  selectedProductId = savedProduct.id;
+  resetProductDraft();
+  productSaveMessage = "";
+  saveState();
+  render();
+}
+
+function syncDealPriceFromRate(product) {
+  product.dealPriceInr = roundCurrencyValue(
+    safeNumber(product.amazonSellingPriceInr) * (1 - safeNumber(product.dealPriceRate)),
+  );
+}
+
+function syncDealRateFromPrice(product) {
   const sellingPriceInr = safeNumber(product.amazonSellingPriceInr);
-  const gstOnAmazonSellingPriceInr = sellingPriceInr * (gstRate / (100 + gstRate));
-  const amazonSettlementInr =
-    sellingPriceInr -
-    safeNumber(product.commissionRate) * sellingPriceInr -
+  product.dealPriceRate = sellingPriceInr
+    ? (sellingPriceInr - safeNumber(product.dealPriceInr)) / sellingPriceInr
+    : 0;
+}
+
+function updateDealLinkedFields(product, changedKey) {
+  const rateInput = document.querySelector('[data-product-field="dealPriceRate"]');
+  const priceInput = document.querySelector('[data-product-field="dealPriceInr"]');
+
+  if (changedKey !== "dealPriceRate" && rateInput) {
+    rateInput.value = String(roundCurrencyValue(safeNumber(product.dealPriceRate) * 100));
+  }
+
+  if (changedKey !== "dealPriceInr" && priceInput) {
+    priceInput.value = String(roundCurrencyValue(product.dealPriceInr));
+  }
+}
+
+function getDealPriceInr(product) {
+  if (hasValue(product.dealPriceInr)) {
+    return safeNumber(product.dealPriceInr);
+  }
+
+  const sellingPriceInr = safeNumber(product.amazonSellingPriceInr);
+  const dealPriceRate = hasValue(product.dealPriceRate) ? safeNumber(product.dealPriceRate) : 0;
+  return roundCurrencyValue(sellingPriceInr * (1 - dealPriceRate));
+}
+
+function createCommissionRow(category = "", commissionRate = 0.105) {
+  return {
+    id: crypto.randomUUID(),
+    category,
+    commissionRate,
+  };
+}
+
+function cloneDefaultCommissionMaster() {
+  return defaultCommissionMaster.map((row) =>
+    createCommissionRow(row.category, row.commissionRate),
+  );
+}
+
+function cloneCommissionMasterRows(rows) {
+  return rows.map((row) => ({
+    id: row.id || crypto.randomUUID(),
+    category: row.category || "",
+    commissionRate: safeNumber(row.commissionRate),
+  }));
+}
+
+function createMasterDraft() {
+  return {
+    settings: {
+      insuranceRate: state.settings.insuranceRate,
+      swsRate: state.settings.swsRate,
+      warehouseRate: state.settings.warehouseRate,
+    },
+    commissionMaster: cloneCommissionMasterRows(state.commissionMaster),
+  };
+}
+
+function ensureMasterDraft() {
+  if (!masterDraft) {
+    masterDraft = createMasterDraft();
+  }
+
+  const rows = getDraftCommissionMaster();
+  if (!rows.some((row) => row.id === selectedMasterCategoryId)) {
+    selectedMasterCategoryId = rows[0]?.id ?? null;
+  }
+}
+
+function getDraftSettings() {
+  return masterDraft?.settings || state.settings;
+}
+
+function getDraftCommissionMaster() {
+  return masterDraft?.commissionMaster || state.commissionMaster;
+}
+
+function normalizeCommissionMaster(masterRows, products = []) {
+  const rows = Array.isArray(masterRows) ? masterRows : [];
+  const normalized = rows
+    .map((row) => ({
+      id: row.id || crypto.randomUUID(),
+      category: String(row.category || "").trim(),
+      commissionRate: safeNumber(row.commissionRate),
+    }))
+    .filter((row) => row.category);
+  const known = new Set(normalized.map((row) => row.category.toLowerCase()));
+
+  products.forEach((product) => {
+    const category = String(product.category || "").trim();
+    if (category && !known.has(category.toLowerCase())) {
+      normalized.push(createCommissionRow(category, safeNumber(product.commissionRate) || 0.105));
+      known.add(category.toLowerCase());
+    }
+  });
+
+  return normalized.length ? normalized : cloneDefaultCommissionMaster();
+}
+
+function getKnownCategories() {
+  return [...new Set(
+    [
+      ...state.commissionMaster.map((row) => String(row.category || "").trim()),
+      ...state.products.map((product) => String(product.category || "").trim()),
+    ]
+      .filter(Boolean),
+  )].sort((a, b) => a.localeCompare(b));
+}
+
+function getKnownCountries() {
+  return [...new Set(
+    state.products
+      .map((product) => String(product.countryOfOrigin || "").trim())
+      .filter(Boolean),
+  )].sort((a, b) => a.localeCompare(b));
+}
+
+function getLatestCountryOfOrigin() {
+  const lastCountry = String(state.settings.lastCountryOfOrigin || "").trim();
+  if (lastCountry) return lastCountry;
+
+  for (let index = state.products.length - 1; index >= 0; index -= 1) {
+    const country = String(state.products[index].countryOfOrigin || "").trim();
+    if (country) return country;
+  }
+
+  return getKnownCountries()[0] || "";
+}
+
+function getCommissionForCategory(category) {
+  const normalizedCategory = String(category || "").trim().toLowerCase();
+  const match = state.commissionMaster.find(
+    (row) => String(row.category || "").trim().toLowerCase() === normalizedCategory,
+  );
+  return match ? safeNumber(match.commissionRate) : null;
+}
+
+function applyCommissionForProductCategory(product) {
+  const commissionRate = getCommissionForCategory(product.category);
+  if (commissionRate !== null) {
+    product.commissionRate = commissionRate;
+  }
+}
+
+function getLatestMasterCategory() {
+  for (let index = state.commissionMaster.length - 1; index >= 0; index -= 1) {
+    const category = String(state.commissionMaster[index].category || "").trim();
+    if (category) return category;
+  }
+  return getKnownCategories()[0] || "";
+}
+
+function calculateAmazonAmounts(priceInr, gstRate, product, landingCostInr) {
+  const gstOnSellingPriceInr = priceInr * (gstRate / (100 + gstRate));
+  const settlementInr =
+    priceInr -
+    safeNumber(product.commissionRate) * priceInr -
     safeNumber(product.pickPackFeeInr) -
     safeNumber(product.weightHandlingFeeInr) -
     safeNumber(product.fixedClosingFeeInr) -
-    (sellingPriceInr - gstOnAmazonSellingPriceInr) * safeNumber(product.tdsTcsRate);
-  const profitInr = amazonSettlementInr - gstOnAmazonSellingPriceInr - landingCostInr;
-  const margin = sellingPriceInr ? profitInr / sellingPriceInr : 0;
-  const roi = landingCostInr ? profitInr / landingCostInr : 0;
+    (priceInr - gstOnSellingPriceInr) * safeNumber(product.tdsTcsRate);
+  const profitInr = settlementInr - gstOnSellingPriceInr - landingCostInr;
 
   return {
+    gstOnSellingPriceInr,
+    settlementInr,
+    profitInr,
+    margin: priceInr ? profitInr / priceInr : 0,
+  };
+}
+
+function calculateProduct(product, settings = state.settings) {
+  const domesticProduct = isIndiaProcurement(product);
+  const productCostUsd = domesticProduct ? 0 : safeNumber(product.productCostUsd);
+  const weightKg = safeNumber(product.weightKg);
+  const gstRate = safeNumber(product.gstRate);
+  const usdRate = safeNumber(settings.usdRate);
+  const productCostInr = domesticProduct ? safeNumber(product.productCostInr) : productCostUsd * usdRate;
+  const freightUsd = domesticProduct ? 0 : safeNumber(settings.freightPerKgUsd) * weightKg;
+  const insuranceUsd = domesticProduct
+    ? 0
+    : (productCostUsd + freightUsd) * (safeNumber(settings.insuranceRate) / 100);
+  const customsBaseUsd = productCostUsd + freightUsd + insuranceUsd;
+  const hasCooBenefit = String(product.cooBenefit).toLowerCase() === "yes";
+  const bcdRate = product.bcdRate ?? settings.bcdRate;
+  const basicCustomDutyUsd = domesticProduct || hasCooBenefit
+    ? 0
+    : customsBaseUsd * (safeNumber(bcdRate) / 100);
+  const swsUsd = domesticProduct ? 0 : basicCustomDutyUsd * (safeNumber(settings.swsRate) / 100);
+  const igstUsd = domesticProduct
+    ? 0
+    : (productCostUsd + freightUsd + insuranceUsd + basicCustomDutyUsd + swsUsd) *
+      (gstRate / 100);
+  const importCostUsd =
+    productCostUsd + freightUsd + insuranceUsd + basicCustomDutyUsd + swsUsd;
+  const importCostInr = domesticProduct ? productCostInr : importCostUsd * usdRate;
+  const landingCostInr =
+    importCostInr + importCostInr * (safeNumber(settings.warehouseRate) / 100) + safeNumber(product.overheadCostInr);
+  const listedSellingPriceInr = safeNumber(product.amazonSellingPriceInr);
+  const dealPriceInr = getDealPriceInr(product);
+  const amazonAmounts = calculateAmazonAmounts(
+    listedSellingPriceInr,
+    gstRate,
+    product,
+    landingCostInr,
+  );
+  const amazonDealAmounts = calculateAmazonAmounts(dealPriceInr, gstRate, product, landingCostInr);
+  const gstAmazonInr = amazonAmounts.gstOnSellingPriceInr;
+  const settlementAmazonInr = amazonAmounts.settlementInr;
+  const gstOnAmazonSellingPriceInr = amazonDealAmounts.gstOnSellingPriceInr;
+  const amazonSettlementInr = amazonDealAmounts.settlementInr;
+  const gstAmazonDealInr = amazonDealAmounts.gstOnSellingPriceInr;
+  const settlementAmazonDealInr = amazonDealAmounts.settlementInr;
+  const amazonProfitInr = amazonAmounts.profitInr;
+  const amazonDealProfitInr = amazonDealAmounts.profitInr;
+  const profitInr = amazonDealProfitInr;
+  const marginAmazon = amazonAmounts.margin;
+  const marginAmazonDeal = amazonDealAmounts.margin;
+  const roiAmazon = landingCostInr ? amazonProfitInr / landingCostInr : 0;
+  const roiAmazonDeal = landingCostInr ? amazonDealProfitInr / landingCostInr : 0;
+  const roiProductCostAmazon = productCostInr ? amazonProfitInr / productCostInr : 0;
+  const roiProductCostAmazonDeal = productCostInr ? amazonDealProfitInr / productCostInr : 0;
+  const margin = marginAmazonDeal;
+  const roi = roiAmazonDeal;
+  const roiOnProductCost = roiProductCostAmazonDeal;
+
+  return {
+    productCostInr,
     freightUsd,
     insuranceUsd,
     basicCustomDutyUsd,
@@ -193,11 +927,28 @@ function calculateProduct(product, settings = state.settings) {
     importCostUsd,
     importCostInr,
     landingCostInr,
+    listedSellingPriceInr,
+    dealPriceInr,
+    amazonListedSettlementInr: amazonAmounts.settlementInr,
+    gstOnListedSellingPriceInr: amazonAmounts.gstOnSellingPriceInr,
+    gstAmazonInr,
+    settlementAmazonInr,
     gstOnAmazonSellingPriceInr,
     amazonSettlementInr,
+    gstAmazonDealInr,
+    settlementAmazonDealInr,
+    amazonProfitInr,
+    amazonDealProfitInr,
     profitInr,
+    marginAmazon,
+    marginAmazonDeal,
+    roiAmazon,
+    roiAmazonDeal,
+    roiProductCostAmazon,
+    roiProductCostAmazonDeal,
     margin,
     roi,
+    roiOnProductCost,
   };
 }
 
@@ -230,9 +981,23 @@ function summarize() {
 
 function render() {
   const app = document.querySelector("#app");
+  const page = getCurrentPage();
+
+  if (page === "master") {
+    ensureMasterDraft();
+    app.innerHTML = `
+      <main class="shell">
+        ${renderHeader(page)}
+        ${renderMasterDataPage()}
+      </main>
+    `;
+
+    bindEvents();
+    return;
+  }
+
   const summary = summarize();
-  const selectedProduct =
-    state.products.find((product) => product.id === selectedProductId) || state.products[0];
+  const selectedProduct = getSelectedProduct();
   selectedProductId = selectedProduct?.id ?? null;
   const selectedCalc = selectedProduct ? calculateProduct(selectedProduct) : null;
 
@@ -247,6 +1012,15 @@ function render() {
           </div>
         </div>
         <div class="header-actions">
+          <a class="nav-link" href="master/">Master Data</a>
+          <label class="ghost-button file-button" title="Upload Excel">
+            Upload Excel
+            <input
+              data-product-upload
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            />
+          </label>
           <button class="icon-button" data-action="reset" title="Reset" aria-label="Reset">↺</button>
           <button class="icon-button" data-action="export" title="Export CSV" aria-label="Export CSV">⇩</button>
           <button class="primary-button" data-action="add">+ Product</button>
@@ -256,21 +1030,10 @@ function render() {
       <section class="settings-band">
         ${renderSettingInput("usdRate", "USD Rate", state.settings.usdRate, "INR")}
         ${renderSettingInput("freightPerKgUsd", "Freight / kg", state.settings.freightPerKgUsd, "USD")}
-        ${renderSettingInput("insuranceRate", "Insurance", state.settings.insuranceRate, "%")}
-        ${renderSettingInput("bcdRate", "Custom duty", state.settings.bcdRate, "%")}
-        ${renderSettingInput("swsRate", "SWS", state.settings.swsRate, "%")}
-        ${renderSettingInput("warehouseRate", "Warehouse load", state.settings.warehouseRate, "%")}
         <div class="rate-tools">
           <button class="ghost-button" data-action="refresh-rate">Live USD/INR</button>
           <span class="status-text">${exchangeStatus || state.settings.fxUpdatedAt}</span>
         </div>
-      </section>
-
-      <section class="metric-grid">
-        ${metric("Total landing cost", currency(summary.totals.landing), "All products")}
-        ${metric("Total profit", currency(summary.totals.profit), `${percent(summary.margin)} net margin`, summary.totals.profit >= 0 ? "good" : "bad")}
-        ${metric("Best product", summary.best?.product.productName || "None", summary.best ? currency(summary.best.calc.profitInr) : "No products")}
-        ${metric("Profitable SKUs", `${summary.profitableCount}/${state.products.length}`, "Positive profit")}
       </section>
 
       <section class="workspace">
@@ -279,9 +1042,11 @@ function render() {
             <h2>Products</h2>
             <button class="icon-button small" data-action="add" title="Add product" aria-label="Add product">+</button>
           </div>
+          ${renderProductSearch()}
           <div class="list-scroll">
-            ${state.products.map((product) => renderProductRow(product)).join("")}
+            ${getListedProducts().map((product) => renderProductRow(product)).join("")}
           </div>
+          <div class="empty-filter" data-filter-empty hidden>No products match this search.</div>
         </aside>
 
         <section class="editor-panel">
@@ -292,38 +1057,39 @@ function render() {
           }
         </section>
       </section>
-
-      <section class="result-panel">
-        <div class="section-title">
-          <h2>Calculation Table</h2>
-          <span class="status-text">${state.products.length} products</span>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Cost USD</th>
-                <th>Freight USD</th>
-                <th>Duty INR</th>
-                <th>Import INR</th>
-                <th>Landing INR</th>
-                <th>Selling INR</th>
-                <th>Settlement INR</th>
-                <th>Profit INR</th>
-                <th>Margin</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${summary.calculated.map(({ product, calc }) => renderResultRow(product, calc)).join("")}
-            </tbody>
-          </table>
-        </div>
-      </section>
     </main>
   `;
 
   bindEvents();
+  applyProductFilter();
+}
+
+function getCurrentPage() {
+  const path = window.location.pathname.replace(/\/$/, "");
+  return path === "/master" ||
+    path === "/master.html" ||
+    path === "/master/index.html" ||
+    path.endsWith("/master/index.html")
+    ? "master"
+    : "home";
+}
+
+function renderHeader(page) {
+  return `
+    <header class="app-header">
+      <div class="brand-lockup">
+        <img class="brand-mark" src="import-profit-mark.png" alt="" />
+        <div>
+          <p class="eyebrow">Import and Profit App</p>
+          <h1>${page === "master" ? "Master Data" : "Custom Import Profit Calculator"}</h1>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="nav-link" href="../index.html">Products</a>
+        <a class="nav-link active" href="../master/">Master Data</a>
+      </div>
+    </header>
+  `;
 }
 
 function renderSettingInput(key, label, value, suffix) {
@@ -335,6 +1101,185 @@ function renderSettingInput(key, label, value, suffix) {
         <b>${suffix}</b>
       </div>
     </label>
+  `;
+}
+
+function renderMasterSettingInput(key, label, value, suffix) {
+  return `
+    <label class="setting-field">
+      <span>${label}</span>
+      <div class="input-shell">
+        <input data-master-setting="${key}" type="number" step="0.001" value="${value}" />
+        <b>${suffix}</b>
+      </div>
+    </label>
+  `;
+}
+
+function renderMasterDataPage() {
+  return `
+    <section class="master-page">
+      <section class="master-toolbar">
+        <div>
+          <h2>Master Data Entry</h2>
+          <p class="section-note">Changes here update the app only after you save.</p>
+          ${masterDraftMessage ? `<p class="save-message">${masterDraftMessage}</p>` : ""}
+        </div>
+        <button class="primary-button" data-action="save-master">Save Master Data</button>
+      </section>
+      ${renderCategoryCommissionSection()}
+      ${renderInsuranceSection()}
+      ${renderSwsSection()}
+      ${renderWarehouseSection()}
+    </section>
+  `;
+}
+
+function renderCommissionMaster() {
+  return renderCategoryCommissionSection();
+}
+
+function renderCategoryCommissionSection() {
+  const selectedRow = getSelectedCommissionRow();
+  const commissionRows = getDraftCommissionMaster();
+
+  return `
+    <section class="master-section">
+      <div class="section-title">
+        <div>
+          <h2>Category Commission</h2>
+          <p class="section-note">Map each product category to its Amazon commission.</p>
+        </div>
+        <button class="primary-button compact" data-action="add-master-category">+ Category</button>
+      </div>
+      <label class="form-field master-picker">
+        <span>Select category</span>
+        <div class="input-shell">
+          <select data-master-category-select>
+            ${commissionRows
+              .map(
+                (row) => `
+                  <option value="${row.id}" ${row.id === selectedMasterCategoryId ? "selected" : ""}>
+                    ${escapeHtml(row.category || "Untitled category")}
+                  </option>
+                `,
+              )
+              .join("")}
+          </select>
+        </div>
+      </label>
+      <div class="master-grid">
+        ${selectedRow ? renderCommissionMasterRow(selectedRow) : ""}
+      </div>
+    </section>
+  `;
+}
+
+function getSelectedCommissionRow() {
+  const rows = getDraftCommissionMaster();
+  const selectedRow = rows.find((row) => row.id === selectedMasterCategoryId);
+  if (selectedRow) return selectedRow;
+
+  const fallbackRow = rows[0] || null;
+  selectedMasterCategoryId = fallbackRow?.id ?? null;
+  return fallbackRow;
+}
+
+function renderInsuranceSection() {
+  const draftSettings = getDraftSettings();
+  return `
+    <section class="master-section">
+      <div class="section-title">
+        <div>
+          <h2>Insurance</h2>
+          <p class="section-note">Default insurance rate used in import cost calculation.</p>
+        </div>
+      </div>
+      <div class="master-grid compact">
+        ${renderMasterSettingInput("insuranceRate", "Insurance rate", draftSettings.insuranceRate, "%")}
+      </div>
+    </section>
+  `;
+}
+
+function renderSwsSection() {
+  const draftSettings = getDraftSettings();
+  return `
+    <section class="master-section">
+      <div class="section-title">
+        <div>
+          <h2>SWS</h2>
+          <p class="section-note">Default Social Welfare Surcharge rate used after basic custom duty.</p>
+        </div>
+      </div>
+      <div class="master-grid compact">
+        ${renderMasterSettingInput("swsRate", "SWS rate", draftSettings.swsRate, "%")}
+      </div>
+    </section>
+  `;
+}
+
+function renderWarehouseSection() {
+  const draftSettings = getDraftSettings();
+  return `
+    <section class="master-section">
+      <div class="section-title">
+        <div>
+          <h2>Warehouse</h2>
+          <p class="section-note">Default warehouse load added to import cost before overhead cost.</p>
+        </div>
+      </div>
+      <div class="master-grid compact">
+        ${renderMasterSettingInput("warehouseRate", "Warehouse load", draftSettings.warehouseRate, "%")}
+      </div>
+    </section>
+  `;
+}
+
+function renderMasterPlaceholderSection(title, note) {
+  return `
+    <section class="master-section placeholder">
+      <div class="section-title">
+        <div>
+          <h2>${title}</h2>
+          <p class="section-note">${note}</p>
+        </div>
+        <span class="section-pill">Ready for setup</span>
+      </div>
+    </section>
+  `;
+}
+
+function renderCommissionMasterRow(row) {
+  return `
+    <div class="master-row">
+      <label class="form-field">
+        <span>Category</span>
+        <div class="input-shell">
+          <input
+            data-master-id="${row.id}"
+            data-master-field="category"
+            data-master-original="${escapeAttribute(row.category)}"
+            type="text"
+            value="${escapeAttribute(row.category)}"
+          />
+        </div>
+      </label>
+      <label class="form-field">
+        <span>Amazon commission</span>
+        <div class="input-shell">
+          <input
+            data-master-id="${row.id}"
+            data-master-field="commissionRate"
+            type="number"
+            step="0.001"
+            value="${safeNumber(row.commissionRate) * 100}"
+          />
+          <b>%</b>
+        </div>
+      </label>
+      <button class="icon-button danger master-delete" data-master-delete="${row.id}" title="Delete category" aria-label="Delete category">x</button>
+    </div>
   `;
 }
 
@@ -351,30 +1296,68 @@ function metric(label, value, detail, tone = "") {
 function renderProductRow(product) {
   const calc = calculateProduct(product);
   const active = product.id === selectedProductId ? "active" : "";
-  const tone = calc.profitInr >= 0 ? "positive" : "negative";
+  const draft = isDraftProduct(product);
+  const tone = calc.amazonDealProfitInr >= 0 ? "positive" : "negative";
   return `
-    <button class="product-row ${active}" data-select-product="${product.id}">
+    <button class="product-row ${active} ${draft ? "draft" : ""}" data-select-product="${product.id}" data-product-row="${product.id}">
       <span>
         <strong>${escapeHtml(product.productName || "Untitled product")}</strong>
-        <small>${escapeHtml(product.sku || "No SKU")} · ${escapeHtml(product.asin || "No ASIN")}</small>
+        <small>SKU: ${escapeHtml(product.sku || "-")} | ASIN: ${escapeHtml(product.asin || "-")} | HSN: ${escapeHtml(product.hsnCode || "-")}</small>
+        <small>${draft ? (isNewProductDraft() ? "Draft, not saved" : "Unsaved changes") : `Category: ${escapeHtml(product.category || "-")}`}</small>
       </span>
-      <b class="${tone}">${currency(calc.profitInr)}</b>
+      <b class="${tone}">${currency(calc.amazonDealProfitInr)}</b>
     </button>
   `;
 }
 
+function renderProductSearch() {
+  return `
+    <div class="product-tools">
+      <div class="input-shell search-shell">
+        <input
+          data-product-search
+          type="search"
+          placeholder="Search product, category, SKU, ASIN, HSN"
+          value="${escapeAttribute(productSearchQuery)}"
+          aria-label="Search products"
+        />
+      </div>
+      <div class="input-shell filter-shell">
+        <select data-product-filter aria-label="Filter search field">
+          ${productSearchFilters
+            .map(
+              (filter) => `
+                <option value="${filter.value}" ${productFilterField === filter.value ? "selected" : ""}>
+                  ${filter.label}
+                </option>
+              `,
+            )
+            .join("")}
+        </select>
+      </div>
+    </div>
+    <div class="filter-summary" data-filter-count>${getProductListCountLabel()}</div>
+    ${uploadStatus ? `<div class="upload-status ${uploadStatusTone}">${escapeHtml(uploadStatus)}</div>` : ""}
+  `;
+}
+
 function renderEditor(product, calc) {
+  const draft = isDraftProduct(product);
+  const productMessage = productSaveMessage || getProductUniquenessMessage(product);
   return `
     <div class="editor-head">
       <div>
-        <p class="eyebrow">Selected Product</p>
+        <p class="eyebrow">${draft ? getDraftProductLabel() : "Selected Product"}</p>
         <h2>${escapeHtml(product.productName || "Untitled product")}</h2>
       </div>
-      <div class="row-actions">
+      <div class="row-actions ${draft ? "draft-actions" : ""}">
+        <button class="primary-button compact" data-action="save-product" ${productMessage ? "disabled" : ""}>Save Product</button>
+        <button class="ghost-button compact" data-action="discard-product" ${draft ? "" : "hidden"}>Discard</button>
         <button class="icon-button" data-action="duplicate" title="Duplicate" aria-label="Duplicate">⧉</button>
         <button class="icon-button danger" data-action="delete" title="Delete" aria-label="Delete">×</button>
       </div>
     </div>
+    <div class="product-message error" data-product-message ${productMessage ? "" : "hidden"}>${escapeHtml(productMessage)}</div>
 
     <div class="tabs" role="tablist" aria-label="Product sections">
       ${fieldGroups
@@ -390,11 +1373,14 @@ function renderEditor(product, calc) {
 
     <div class="editor-grid">
       ${fieldGroups.find((group) => group.title === activeGroup).fields
+        .filter((field) => shouldRenderProductField(product, field))
         .map((field) => renderProductField(product, field))
         .join("")}
     </div>
-
-    <div class="breakdown-grid">
+    ${renderCountryOptions()}
+    ${renderDashboardFilter()}
+    <div class="breakdown-grid" data-product-dashboard>
+      ${!getVisibleDashboardCards().length ? `<div class="dashboard-empty">No dashboard cards selected.</div>` : ""}
       ${breakdownItem("Freight / unit", currency(calc.freightUsd, "USD", 3))}
       ${breakdownItem("Insurance / unit", currency(calc.insuranceUsd, "USD", 3))}
       ${breakdownItem("Basic customs", `${currency(calc.basicCustomDutyUsd, "USD", 3)} · ${currency(calc.basicCustomDutyInr)}`)}
@@ -402,22 +1388,37 @@ function renderEditor(product, calc) {
       ${breakdownItem("IGST", `${currency(calc.igstUsd, "USD", 3)} · ${currency(calc.igstInr)}`)}
       ${breakdownItem("Import cost", `${currency(calc.importCostUsd, "USD", 3)} · ${currency(calc.importCostInr)}`)}
       ${breakdownItem("Landing cost", currency(calc.landingCostInr))}
-      ${breakdownItem("GST on selling price", currency(calc.gstOnAmazonSellingPriceInr))}
-      ${breakdownItem("Amazon settlement", currency(calc.amazonSettlementInr))}
-      ${breakdownItem("Profit", currency(calc.profitInr), calc.profitInr >= 0 ? "good" : "bad")}
-      ${breakdownItem("Margin", percent(calc.margin))}
-      ${breakdownItem("ROI on landing", percent(calc.roi))}
+      ${breakdownItem("GST Amazon", currency(calc.gstAmazonInr))}
+      ${breakdownItem("GST Amazon Deal", currency(calc.gstAmazonDealInr))}
+      ${breakdownItem("Settlement Amazon", currency(calc.settlementAmazonInr))}
+      ${breakdownItem("Settlement Amazon Deal", currency(calc.settlementAmazonDealInr))}
+      ${breakdownItem("Profit Amazon", currency(calc.amazonProfitInr), calc.amazonProfitInr >= 0 ? "good" : "bad")}
+      ${breakdownItem("Profit Amazon Deal", currency(calc.amazonDealProfitInr), calc.amazonDealProfitInr >= 0 ? "good" : "bad")}
+      ${breakdownItem("Margin Amazon", percent(calc.marginAmazon), "amazon-margin")}
+      ${breakdownItem("Margin Amazon Deal", percent(calc.marginAmazonDeal), "deal-margin")}
+      ${breakdownItem("ROI Amazon on landing", percent(calc.roiAmazon), "roi-landing")}
+      ${breakdownItem("ROI Amazon Deal on landing", percent(calc.roiAmazonDeal), "roi-deal-landing")}
+      ${breakdownItem("ROI Amazon on product cost", percent(calc.roiProductCostAmazon), "roi-product-cost")}
+      ${breakdownItem("ROI Amazon Deal on product cost", percent(calc.roiProductCostAmazonDeal), "roi-product-cost")}
     </div>
   `;
 }
 
+function shouldRenderProductField(product, [key]) {
+  if (key === "productCostUsd") return !isIndiaProcurement(product);
+  if (key === "productCostInr") return isIndiaProcurement(product);
+  return true;
+}
+
 function renderProductField(product, [key, label, type, suffixOrOptions]) {
   const rawValue = product[key] ?? "";
+  const disabled = isProductFieldDisabled(product, key);
+  const disabledAttribute = disabled ? " disabled" : "";
   let control = "";
 
   if (type === "select") {
     control = `
-      <select data-product-field="${key}">
+      <select data-product-field="${key}"${disabledAttribute}>
         ${suffixOrOptions
           .map(
             (option) => `
@@ -427,20 +1428,43 @@ function renderProductField(product, [key, label, type, suffixOrOptions]) {
           .join("")}
       </select>
     `;
+  } else if (type === "category") {
+    const categories = getKnownCategories();
+    control = `
+      <select data-product-field="${key}"${disabledAttribute}>
+        ${categories
+          .map(
+            (category) => `
+              <option value="${escapeAttribute(category)}" ${String(rawValue) === category ? "selected" : ""}>${escapeHtml(category)}</option>
+            `,
+          )
+          .join("")}
+        ${rawValue && !categories.includes(String(rawValue)) ? `<option value="${escapeAttribute(rawValue)}" selected>${escapeHtml(rawValue)}</option>` : ""}
+      </select>
+    `;
   } else {
     const value = type === "percentDecimal" ? safeNumber(rawValue) * 100 : rawValue;
+    const isTextInput = type === "text" || type === "country";
+    const listAttribute = type === "country" ? ` list="country-options"` : "";
+    const readonlyAttribute =
+      key === "commissionRate" && getCommissionForCategory(product.category) !== null
+        ? " readonly"
+        : "";
     control = `
       <input
         data-product-field="${key}"
-        type="${type === "text" ? "text" : "number"}"
-        step="${type === "text" ? "" : "0.001"}"
+        type="${isTextInput ? "text" : "number"}"
+        step="${isTextInput ? "" : "0.001"}"
+        ${listAttribute}
+        ${readonlyAttribute}
+        ${disabledAttribute}
         value="${escapeAttribute(value)}"
       />
     `;
   }
 
   return `
-    <label class="form-field">
+    <label class="form-field ${disabled ? "disabled-field" : ""}">
       <span>${label}</span>
       <div class="input-shell">
         ${control}
@@ -450,7 +1474,124 @@ function renderProductField(product, [key, label, type, suffixOrOptions]) {
   `;
 }
 
+function renderCountryOptions() {
+  const countries = getKnownCountries();
+  if (!countries.length) return "";
+
+  return `
+    <datalist id="country-options">
+      ${countries.map((country) => `<option value="${escapeAttribute(country)}"></option>`).join("")}
+    </datalist>
+  `;
+}
+
+function renderDashboardFilter() {
+  const selectedCards = new Set(normalizeDashboardCards(state.settings.dashboardCards));
+  return `
+    <details class="dashboard-filter">
+      <summary>Dashboard display</summary>
+      <div class="dashboard-filter-grid">
+        ${dashboardCardDefinitions
+          .map(
+            (card) => `
+              <label class="dashboard-filter-option">
+                <input
+                  data-dashboard-card="${card.id}"
+                  type="checkbox"
+                  ${selectedCards.has(card.id) ? "checked" : ""}
+                />
+                <span>${card.label}</span>
+              </label>
+            `,
+          )
+          .join("")}
+      </div>
+    </details>
+  `;
+}
+
+function shouldShowDashboardCard(label) {
+  const card = dashboardCardDefinitions.find((item) => item.label === label);
+  if (!card) return true;
+  return normalizeDashboardCards(state.settings.dashboardCards).includes(card.id);
+}
+
+function renderProductDashboard(calc) {
+  if (!getVisibleDashboardCards().length) {
+    return `<div class="dashboard-empty">No dashboard cards selected.</div>`;
+  }
+
+  return `
+      ${breakdownItem("Freight / unit", currency(calc.freightUsd, "USD", 3))}
+      ${breakdownItem("Insurance / unit", currency(calc.insuranceUsd, "USD", 3))}
+      ${breakdownItem("Basic customs", `${currency(calc.basicCustomDutyUsd, "USD", 3)} · ${currency(calc.basicCustomDutyInr)}`)}
+      ${breakdownItem("SWS", `${currency(calc.swsUsd, "USD", 3)} · ${currency(calc.swsInr)}`)}
+      ${breakdownItem("IGST", `${currency(calc.igstUsd, "USD", 3)} · ${currency(calc.igstInr)}`)}
+      ${breakdownItem("Import cost", `${currency(calc.importCostUsd, "USD", 3)} · ${currency(calc.importCostInr)}`)}
+      ${breakdownItem("Landing cost", currency(calc.landingCostInr))}
+      ${breakdownItem("GST Amazon", currency(calc.gstAmazonInr))}
+      ${breakdownItem("GST Amazon Deal", currency(calc.gstAmazonDealInr))}
+      ${breakdownItem("Settlement Amazon", currency(calc.settlementAmazonInr))}
+      ${breakdownItem("Settlement Amazon Deal", currency(calc.settlementAmazonDealInr))}
+      ${breakdownItem("Profit Amazon", currency(calc.amazonProfitInr), calc.amazonProfitInr >= 0 ? "good" : "bad")}
+      ${breakdownItem("Profit Amazon Deal", currency(calc.amazonDealProfitInr), calc.amazonDealProfitInr >= 0 ? "good" : "bad")}
+      ${breakdownItem("Margin Amazon", percent(calc.marginAmazon), "amazon-margin")}
+      ${breakdownItem("Margin Amazon Deal", percent(calc.marginAmazonDeal), "deal-margin")}
+      ${breakdownItem("ROI Amazon on landing", percent(calc.roiAmazon), "roi-landing")}
+      ${breakdownItem("ROI Amazon Deal on landing", percent(calc.roiAmazonDeal), "roi-deal-landing")}
+      ${breakdownItem("ROI Amazon on product cost", percent(calc.roiProductCostAmazon), "roi-product-cost")}
+      ${breakdownItem("ROI Amazon Deal on product cost", percent(calc.roiProductCostAmazonDeal), "roi-product-cost")}
+  `;
+}
+
+function updateProductLiveDashboard(product) {
+  const calc = calculateProduct(product);
+  const dashboard = document.querySelector("[data-product-dashboard]");
+  if (dashboard) {
+    dashboard.innerHTML = renderProductDashboard(calc);
+  }
+
+  const productRow = [...document.querySelectorAll("[data-product-row]")].find(
+    (row) => row.dataset.productRow === product.id,
+  );
+  const profitCell = productRow?.querySelector("b");
+  if (profitCell) {
+    profitCell.textContent = currency(calc.amazonDealProfitInr);
+    profitCell.classList.toggle("positive", calc.amazonDealProfitInr >= 0);
+    profitCell.classList.toggle("negative", calc.amazonDealProfitInr < 0);
+  }
+
+  if (isDraftProduct(product)) {
+    const editorLabel = document.querySelector(".editor-head .eyebrow");
+    if (editorLabel) {
+      editorLabel.textContent = getDraftProductLabel();
+    }
+
+    const rowActions = document.querySelector(".editor-head .row-actions");
+    rowActions?.classList.add("draft-actions");
+    const discardButton = document.querySelector('[data-action="discard-product"]');
+    if (discardButton) {
+      discardButton.hidden = false;
+    }
+
+    productRow?.classList.add("draft");
+    const rowDetails = productRow?.querySelectorAll("small");
+    if (rowDetails?.length) {
+      rowDetails[rowDetails.length - 1].textContent = isNewProductDraft()
+        ? "Draft, not saved"
+        : "Unsaved changes";
+    }
+
+    const filterCount = document.querySelector("[data-filter-count]");
+    if (filterCount) {
+      filterCount.textContent = getProductListCountLabel();
+    }
+  }
+}
+
 function breakdownItem(label, value, tone = "") {
+  if (!shouldShowDashboardCard(label)) return "";
+
   return `
     <article class="breakdown-item ${tone}">
       <span>${label}</span>
@@ -459,37 +1600,22 @@ function breakdownItem(label, value, tone = "") {
   `;
 }
 
-function renderResultRow(product, calc) {
-  return `
-    <tr>
-      <td>
-        <strong>${escapeHtml(product.productName || "Untitled product")}</strong>
-        <small>${escapeHtml(product.design || "")}</small>
-      </td>
-      <td>${currency(product.productCostUsd, "USD", 2)}</td>
-      <td>${currency(calc.freightUsd, "USD", 3)}</td>
-      <td>${currency(calc.basicCustomDutyInr)}</td>
-      <td>${currency(calc.importCostInr)}</td>
-      <td>${currency(calc.landingCostInr)}</td>
-      <td>${currency(product.amazonSellingPriceInr)}</td>
-      <td>${currency(calc.amazonSettlementInr)}</td>
-      <td class="${calc.profitInr >= 0 ? "positive" : "negative"}">${currency(calc.profitInr)}</td>
-      <td>${percent(calc.margin)}</td>
-    </tr>
-  `;
-}
-
 function bindEvents() {
   document.querySelectorAll("[data-setting]").forEach((input) => {
     input.addEventListener("input", (event) => {
-      const key = event.currentTarget.dataset.setting;
-      state.settings[key] = safeNumber(event.currentTarget.value);
-      if (key === "usdRate") {
-        state.settings.fxUpdatedAt = "Manual";
-      }
+      updateSettingFromInput(event.currentTarget);
+      saveState();
+    });
+    input.addEventListener("change", (event) => {
+      updateSettingFromInput(event.currentTarget);
       saveState();
       render();
     });
+  });
+
+  document.querySelectorAll("[data-master-setting]").forEach((input) => {
+    input.addEventListener("input", updateMasterSettingFromInput);
+    input.addEventListener("change", updateMasterSettingFromInput);
   });
 
   document.querySelectorAll("[data-product-field]").forEach((input) => {
@@ -497,9 +1623,69 @@ function bindEvents() {
     input.addEventListener("change", handleProductInput);
   });
 
+  document.querySelectorAll("[data-dashboard-card]").forEach((input) => {
+    input.addEventListener("change", () => {
+      state.settings.dashboardCards = [...document.querySelectorAll("[data-dashboard-card]:checked")]
+        .map((item) => item.dataset.dashboardCard);
+      saveState();
+      const product = getSelectedProduct();
+      if (product) {
+        updateProductLiveDashboard(product);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-master-field]").forEach((input) => {
+    input.addEventListener("input", handleMasterInput);
+    input.addEventListener("change", handleMasterInput);
+  });
+
+  const masterCategorySelect = document.querySelector("[data-master-category-select]");
+  masterCategorySelect?.addEventListener("change", (event) => {
+    selectedMasterCategoryId = event.currentTarget.value;
+    render();
+  });
+
+  document.querySelectorAll("[data-master-delete]").forEach((button) => {
+    button.addEventListener("click", () => {
+      ensureMasterDraft();
+      const row = masterDraft.commissionMaster.find(
+        (item) => item.id === button.dataset.masterDelete,
+      );
+      if (!row) return;
+      if (masterDraft.commissionMaster.length === 1) {
+        window.alert("At least one category is required.");
+        return;
+      }
+      if (!confirmMasterCategoryDelete(row)) return;
+      masterDraft.commissionMaster = masterDraft.commissionMaster.filter(
+        (row) => row.id !== button.dataset.masterDelete,
+      );
+      selectedMasterCategoryId = masterDraft.commissionMaster[0]?.id ?? null;
+      masterDraftMessage = "";
+      render();
+    });
+  });
+
+  const productSearch = document.querySelector("[data-product-search]");
+  productSearch?.addEventListener("input", (event) => {
+    productSearchQuery = event.currentTarget.value;
+    applyProductFilter();
+  });
+
+  const productFilter = document.querySelector("[data-product-filter]");
+  productFilter?.addEventListener("change", (event) => {
+    productFilterField = event.currentTarget.value;
+    applyProductFilter();
+  });
+
+  const productUpload = document.querySelector("[data-product-upload]");
+  productUpload?.addEventListener("change", handleBulkUpload);
+
   document.querySelectorAll("[data-select-product]").forEach((button) => {
     button.addEventListener("click", () => {
       selectedProductId = button.dataset.selectProduct;
+      productSaveMessage = "";
       render();
     });
   });
@@ -516,40 +1702,547 @@ function bindEvents() {
   });
 }
 
-function handleProductInput(event) {
-  const key = event.currentTarget.dataset.productField;
-  const product = state.products.find((item) => item.id === selectedProductId);
-  if (!product) return;
+function applyProductFilter() {
+  const rows = document.querySelectorAll("[data-product-row]");
+  const query = productSearchQuery.trim().toLowerCase();
+  let visibleCount = 0;
 
-  const percentFields = new Set(["commissionRate", "tdsTcsRate"]);
-  const textFields = new Set(["productName", "design", "sku", "asin", "countryOfOrigin", "cooBenefit"]);
+  rows.forEach((row) => {
+    const product = getListedProducts().find((item) => item.id === row.dataset.productRow);
+    const isVisible = product ? productMatchesSearch(product, query) : false;
+    row.hidden = !isVisible;
+    if (isVisible) {
+      visibleCount += 1;
+    }
+  });
 
-  if (percentFields.has(key)) {
-    product[key] = safeNumber(event.currentTarget.value) / 100;
-  } else if (textFields.has(key)) {
-    product[key] = event.currentTarget.value;
-  } else {
-    product[key] = safeNumber(event.currentTarget.value);
+  const filterCount = document.querySelector("[data-filter-count]");
+  if (filterCount) {
+    filterCount.textContent = getProductListCountLabel(query ? visibleCount : undefined);
   }
 
+  const emptyState = document.querySelector("[data-filter-empty]");
+  if (emptyState) {
+    emptyState.hidden = visibleCount > 0;
+  }
+}
+
+function productMatchesSearch(product, query) {
+  if (!query) return true;
+  const fields =
+    productFilterField === "all"
+      ? productSearchFilters
+          .filter((filter) => filter.value !== "all")
+          .map((filter) => filter.value)
+      : [productFilterField];
+
+  return fields.some((field) =>
+    String(product[field] ?? "")
+      .toLowerCase()
+      .includes(query),
+  );
+}
+
+async function handleBulkUpload(event) {
+  const file = event.currentTarget.files?.[0];
+  event.currentTarget.value = "";
+  if (!file) return;
+
+  if (productDraft) {
+    uploadStatus = "Save or discard the current product before uploading Excel.";
+    uploadStatusTone = "error";
+    render();
+    return;
+  }
+
+  uploadStatus = `Reading ${file.name}`;
+  uploadStatusTone = "";
+  render();
+
+  try {
+    const rows = await readXlsxRows(file);
+    const products = createProductsFromUploadRows(rows);
+    if (!products.length) {
+      throw new Error("No product rows found in the Excel file.");
+    }
+
+    const uploadResult = applyUploadedProducts(products);
+    state.commissionMaster = normalizeCommissionMaster(state.commissionMaster, state.products);
+    const latestCountry = [...uploadResult.touchedProducts].reverse().find((product) =>
+      String(product.countryOfOrigin || "").trim(),
+    )?.countryOfOrigin;
+    if (latestCountry) {
+      state.settings.lastCountryOfOrigin = latestCountry;
+    }
+
+    selectedProductId = uploadResult.touchedProducts[0].id;
+    productSearchQuery = "";
+    productFilterField = "all";
+    activeGroup = "Product";
+    productSaveMessage = "";
+    uploadStatus = `${uploadResult.addedCount} added, ${uploadResult.updatedCount} updated from Excel.`;
+    uploadStatusTone = "";
+    saveState();
+    render();
+  } catch (error) {
+    uploadStatus = error.message || "Could not import this Excel file.";
+    uploadStatusTone = "error";
+    render();
+  }
+}
+
+async function readXlsxRows(file) {
+  const zip = await readZipEntries(await file.arrayBuffer());
+  const sheetPath = await getFirstWorksheetPath(zip);
+  const sharedStrings = zip.has("xl/sharedStrings.xml")
+    ? parseSharedStrings(await zip.getText("xl/sharedStrings.xml"))
+    : [];
+  return parseWorksheetRows(await zip.getText(sheetPath), sharedStrings);
+}
+
+async function readZipEntries(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const view = new DataView(arrayBuffer);
+  const endOffset = findZipEndOffset(view);
+  const entryCount = view.getUint16(endOffset + 10, true);
+  const directoryOffset = view.getUint32(endOffset + 16, true);
+  const entries = new Map();
+  let offset = directoryOffset;
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) {
+      throw new Error("Excel file structure is not readable.");
+    }
+
+    const method = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const fileNameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localOffset = view.getUint32(offset + 42, true);
+    const nameStart = offset + 46;
+    const name = new TextDecoder().decode(bytes.slice(nameStart, nameStart + fileNameLength));
+    const localNameLength = view.getUint16(localOffset + 26, true);
+    const localExtraLength = view.getUint16(localOffset + 28, true);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+
+    entries.set(name, {
+      method,
+      compressed: bytes.slice(dataStart, dataStart + compressedSize),
+      content: null,
+    });
+
+    offset = nameStart + fileNameLength + extraLength + commentLength;
+  }
+
+  async function getBytes(name) {
+    const entry = entries.get(name);
+    if (!entry) throw new Error(`Missing Excel part: ${name}`);
+    if (entry.content) return entry.content;
+    if (entry.method === 0) {
+      entry.content = entry.compressed;
+    } else if (entry.method === 8) {
+      entry.content = await inflateZipDeflate(entry.compressed);
+    } else {
+      throw new Error("This Excel compression type is not supported.");
+    }
+    return entry.content;
+  }
+
+  return {
+    has: (name) => entries.has(name),
+    names: () => [...entries.keys()],
+    getBytes,
+    getText: async (name) => new TextDecoder("utf-8").decode(await getBytes(name)),
+  };
+}
+
+function findZipEndOffset(view) {
+  const minimumOffset = Math.max(0, view.byteLength - 65557);
+  for (let offset = view.byteLength - 22; offset >= minimumOffset; offset -= 1) {
+    if (view.getUint32(offset, true) === 0x06054b50) return offset;
+  }
+  throw new Error("Please upload a valid .xlsx file.");
+}
+
+async function inflateZipDeflate(bytes) {
+  if (!("DecompressionStream" in window)) {
+    throw new Error("Excel upload needs a current Chrome or Edge browser.");
+  }
+
+  const stream = new Blob([bytes])
+    .stream()
+    .pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function getFirstWorksheetPath(zip) {
+  if (!zip.has("xl/workbook.xml")) {
+    const fallbackSheet = zip.names().find((name) => name.startsWith("xl/worksheets/sheet"));
+    if (fallbackSheet) return fallbackSheet;
+    throw new Error("No worksheet found in this Excel file.");
+  }
+
+  const workbookDoc = parseXml(await zip.getText("xl/workbook.xml"));
+  const sheet = workbookDoc.getElementsByTagName("sheet")[0];
+  const relId = sheet?.getAttribute("r:id");
+  if (!relId || !zip.has("xl/_rels/workbook.xml.rels")) {
+    return "xl/worksheets/sheet1.xml";
+  }
+
+  const relDoc = parseXml(await zip.getText("xl/_rels/workbook.xml.rels"));
+  const relationship = [...relDoc.getElementsByTagName("Relationship")]
+    .find((item) => item.getAttribute("Id") === relId);
+  const target = relationship?.getAttribute("Target");
+  if (!target) return "xl/worksheets/sheet1.xml";
+  return normalizeZipPath(target.startsWith("/") ? target.slice(1) : `xl/${target}`);
+}
+
+function normalizeZipPath(path) {
+  const parts = [];
+  path.split("/").forEach((part) => {
+    if (!part || part === ".") return;
+    if (part === "..") {
+      parts.pop();
+      return;
+    }
+    parts.push(part);
+  });
+  return parts.join("/");
+}
+
+function parseXml(xml) {
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length) {
+    throw new Error("Excel XML could not be read.");
+  }
+  return doc;
+}
+
+function parseSharedStrings(xml) {
+  return [...parseXml(xml).getElementsByTagName("si")].map((item) =>
+    [...item.getElementsByTagName("t")].map((text) => text.textContent || "").join(""),
+  );
+}
+
+function parseWorksheetRows(xml, sharedStrings) {
+  return [...parseXml(xml).getElementsByTagName("row")]
+    .map((row) => {
+      const values = [];
+      [...row.getElementsByTagName("c")].forEach((cell) => {
+        const cellRef = cell.getAttribute("r") || "";
+        const column = columnNameToIndex(cellRef.replace(/[0-9]/g, "")) ?? values.length;
+        values[column] = readWorksheetCell(cell, sharedStrings);
+      });
+      return values;
+    })
+    .filter((row) => row.some(hasUploadValue));
+}
+
+function readWorksheetCell(cell, sharedStrings) {
+  const type = cell.getAttribute("t");
+  if (type === "inlineStr") {
+    return [...cell.getElementsByTagName("t")].map((text) => text.textContent || "").join("");
+  }
+
+  const value = cell.getElementsByTagName("v")[0]?.textContent ?? "";
+  if (type === "s") return sharedStrings[Number(value)] ?? "";
+  if (type === "b") return value === "1";
+  if (type === "str") return value;
+  const parsed = Number(value);
+  return value !== "" && Number.isFinite(parsed) ? parsed : value;
+}
+
+function columnNameToIndex(columnName) {
+  if (!columnName) return null;
+  return [...columnName].reduce((total, char) => total * 26 + char.charCodeAt(0) - 64, 0) - 1;
+}
+
+function createProductsFromUploadRows(rows) {
+  const headerIndex = rows.findIndex((row) =>
+    row.some((cell) => uploadHeaderAliases[normalizeUploadHeader(cell)]),
+  );
+  if (headerIndex === -1) {
+    throw new Error("No matching header row found in the Excel file.");
+  }
+
+  const columnMap = rows[headerIndex].reduce((map, header, index) => {
+    const field = uploadHeaderAliases[normalizeUploadHeader(header)];
+    if (field) map.set(index, field);
+    return map;
+  }, new Map());
+
+  return rows
+    .slice(headerIndex + 1)
+    .map((row) => createProductFromUploadRow(row, columnMap))
+    .filter(Boolean);
+}
+
+function createProductFromUploadRow(row, columnMap) {
+  const values = {};
+  columnMap.forEach((field, index) => {
+    values[field] = row[index];
+  });
+
+  if (!Object.values(values).some(hasUploadValue)) return null;
+  const countryOfOrigin = uploadText(values.countryOfOrigin);
+  const procurementType = normalizeProcurementType(
+    uploadText(values.procurementType) || (countryOfOrigin.toLowerCase() === "india" ? "India" : "Import"),
+  );
+  const uploadedProductCost = parseUploadNumber(values.productCostUsd);
+
+  const product = {
+    ...defaultProducts[0],
+    id: crypto.randomUUID(),
+    productName: uploadText(values.productName) || uploadText(values.sku) || "Imported Product",
+    category: uploadText(values.category) || getLatestMasterCategory(),
+    design: uploadText(values.design),
+    sku: uploadText(values.sku),
+    asin: uploadText(values.asin),
+    hsnCode: uploadText(values.hsnCode),
+    procurementType,
+    productCostUsd: procurementType === "India" ? 0 : uploadedProductCost,
+    productCostInr: hasUploadValue(values.productCostInr)
+      ? parseUploadNumber(values.productCostInr)
+      : (procurementType === "India" ? uploadedProductCost : 0),
+    weightKg: parseUploadNumber(values.weightKg),
+    countryOfOrigin: countryOfOrigin || (procurementType === "India" ? "India" : getLatestCountryOfOrigin()),
+    cooBenefit: parseUploadYesNo(values.cooBenefit),
+    bcdRate: parseUploadPercentagePoints(values.bcdRate, state.settings.bcdRate),
+    gstRate: parseUploadPercentagePoints(values.gstRate, defaultProducts[0].gstRate),
+    amazonSellingPriceInr: parseUploadNumber(values.amazonSellingPriceInr),
+    dealPriceRate: parseUploadDiscountRate(values.dealPriceRate),
+    dealPriceInr: hasUploadValue(values.dealPriceInr) ? parseUploadNumber(values.dealPriceInr) : undefined,
+  };
+
+  const normalized = normalizeProduct(product);
+  applyCommissionForProductCategory(normalized);
+  return normalized;
+}
+
+function normalizeUploadHeader(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replaceAll("&", "and")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function hasUploadValue(value) {
+  return value !== undefined && value !== null && String(value).trim() !== "";
+}
+
+function uploadText(value) {
+  if (!hasUploadValue(value)) return "";
+  if (typeof value === "number" && Number.isInteger(value)) return String(value);
+  return String(value).trim();
+}
+
+function parseUploadNumber(value) {
+  if (!hasUploadValue(value)) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const parsed = Number(String(value).replace(/[₹$,%\s]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseUploadPercentagePoints(value, fallback) {
+  if (!hasUploadValue(value)) return fallback;
+  const parsed = parseUploadNumber(value);
+  return Math.abs(parsed) <= 1 ? parsed * 100 : parsed;
+}
+
+function parseUploadDiscountRate(value) {
+  if (!hasUploadValue(value)) return 0;
+  const parsed = parseUploadNumber(value);
+  return Math.abs(parsed) > 1 ? parsed / 100 : parsed;
+}
+
+function parseUploadYesNo(value) {
+  const text = uploadText(value).toLowerCase();
+  if (["yes", "y", "true", "1"].includes(text)) return "Yes";
+  if (["no", "n", "false", "0"].includes(text)) return "No";
+  return "No";
+}
+
+function updateSettingFromInput(input) {
+  const key = input.dataset.setting;
+  state.settings[key] = safeNumber(input.value);
+  if (key === "usdRate") {
+    state.settings.fxUpdatedAt = "Manual";
+  }
+}
+
+function updateMasterSettingFromInput(event) {
+  ensureMasterDraft();
+  const key = event.currentTarget.dataset.masterSetting;
+  masterDraft.settings[key] = safeNumber(event.currentTarget.value);
+  masterDraftMessage = "";
+}
+
+function handleMasterInput(event) {
+  ensureMasterDraft();
+  const row = masterDraft.commissionMaster.find(
+    (item) => item.id === event.currentTarget.dataset.masterId,
+  );
+  if (!row) return;
+  masterDraftMessage = "";
+
+  if (event.currentTarget.dataset.masterField === "category") {
+    row.category = event.currentTarget.value;
+  } else {
+    row.commissionRate = safeNumber(event.currentTarget.value) / 100;
+  }
+}
+
+function saveMasterDraft() {
+  ensureMasterDraft();
+  const savedSelectedId = selectedMasterCategoryId;
+  const previousById = new Map(state.commissionMaster.map((row) => [row.id, row]));
+  const draftRows = masterDraft.commissionMaster
+    .map((row) => ({
+      id: row.id || crypto.randomUUID(),
+      category: String(row.category || "").trim(),
+      commissionRate: safeNumber(row.commissionRate),
+    }))
+    .filter((row) => row.category);
+
+  draftRows.forEach((row) => {
+    const previous = previousById.get(row.id);
+    const originalCategory = String(previous?.category || "").trim();
+    const nextCategory = row.category;
+    if (!originalCategory || originalCategory.toLowerCase() === nextCategory.toLowerCase()) return;
+    state.products
+      .filter(
+        (product) =>
+          String(product.category || "").trim().toLowerCase() === originalCategory.toLowerCase(),
+      )
+      .forEach((product) => {
+        product.category = nextCategory;
+      });
+  });
+
+  state.settings = {
+    ...state.settings,
+    insuranceRate: safeNumber(masterDraft.settings.insuranceRate),
+    swsRate: safeNumber(masterDraft.settings.swsRate),
+    warehouseRate: safeNumber(masterDraft.settings.warehouseRate),
+  };
+  state.commissionMaster = normalizeCommissionMaster(draftRows, state.products);
+  state.commissionMaster.forEach((row) => {
+    state.products
+      .filter(
+        (product) =>
+          String(product.category || "").trim().toLowerCase() ===
+          String(row.category || "").trim().toLowerCase(),
+      )
+      .forEach((product) => {
+        product.commissionRate = safeNumber(row.commissionRate);
+      });
+  });
+
   saveState();
+  masterDraft = createMasterDraft();
+  masterDraftMessage = "Master data saved.";
+  selectedMasterCategoryId = state.commissionMaster.some((row) => row.id === savedSelectedId)
+    ? savedSelectedId
+    : state.commissionMaster[0]?.id ?? null;
   render();
 }
 
-async function handleAction(action) {
-  if (action === "add") {
-    const newProduct = {
-      ...defaultProducts[0],
-      id: crypto.randomUUID(),
-      productName: "New Product",
-      design: "",
-      sku: "",
-      asin: "",
-    };
-    state.products.push(newProduct);
-    selectedProductId = newProduct.id;
-    activeGroup = "Product";
+function handleProductInput(event) {
+  const key = event.currentTarget.dataset.productField;
+  const product = getEditableProduct();
+  if (!product) return;
+  const draft = isDraftProduct(product);
+  productSaveMessage = "";
+
+  const percentFields = new Set(["commissionRate", "tdsTcsRate"]);
+  const textFields = new Set(["productName", "category", "design", "sku", "asin", "hsnCode", "procurementType", "countryOfOrigin", "cooBenefit"]);
+
+  if (key === "dealPriceRate") {
+    product.dealPriceRate = safeNumber(event.currentTarget.value) / 100;
+    syncDealPriceFromRate(product);
+    updateDealLinkedFields(product, key);
+  } else if (key === "dealPriceInr") {
+    product.dealPriceInr = safeNumber(event.currentTarget.value);
+    syncDealRateFromPrice(product);
+    updateDealLinkedFields(product, key);
+  } else if (percentFields.has(key)) {
+    product[key] = safeNumber(event.currentTarget.value) / 100;
+  } else if (textFields.has(key)) {
+    product[key] = key === "procurementType"
+      ? normalizeProcurementType(event.currentTarget.value)
+      : event.currentTarget.value;
+    if (key === "procurementType") {
+      applyIndiaProcurementDefaults(product);
+    }
+    if (key === "category") {
+      applyCommissionForProductCategory(product);
+    }
+    if (key === "countryOfOrigin" && !draft) {
+      state.settings.lastCountryOfOrigin = event.currentTarget.value;
+    }
+  } else {
+    product[key] = safeNumber(event.currentTarget.value);
+    if (key === "amazonSellingPriceInr") {
+      syncDealPriceFromRate(product);
+      updateDealLinkedFields(product, key);
+    }
+  }
+
+  productSaveMessage = getProductUniquenessMessage(product);
+  updateProductMessage(productSaveMessage);
+  updateProductLiveDashboard(product);
+
+  if (!draft) {
     saveState();
+  }
+  if (event.type === "change" && !draft) {
+    render();
+  }
+  if (event.type === "change" && key === "procurementType") {
+    render();
+  }
+}
+
+async function handleAction(action) {
+  if (action === "save-product") {
+    saveProductDraft();
+  }
+
+  if (action === "discard-product") {
+    if (!productDraft) return;
+    const fallbackProductId = isNewProductDraft()
+      ? state.products[0]?.id ?? null
+      : productDraftOriginalId;
+    resetProductDraft();
+    productSaveMessage = "";
+    selectedProductId = fallbackProductId;
+    render();
+  }
+
+  if (action === "save-master") {
+    saveMasterDraft();
+  }
+
+  if (action === "add-master-category") {
+    ensureMasterDraft();
+    const newRow = createCommissionRow("New Category", 0.105);
+    masterDraft.commissionMaster.push(newRow);
+    selectedMasterCategoryId = newRow.id;
+    masterDraftMessage = "";
+    render();
+  }
+
+  if (action === "add") {
+    productSaveMessage = "";
+    if (!productDraft) {
+      productDraft = createNewProductDraft();
+      productDraftMode = "new";
+      productDraftOriginalId = null;
+    }
+    selectedProductId = productDraft.id;
+    activeGroup = "Product";
     render();
   }
 
@@ -561,14 +2254,37 @@ async function handleAction(action) {
       id: crypto.randomUUID(),
       productName: `${product.productName || "Product"} Copy`,
     };
+    const duplicate = findDuplicateProductCode(copy, state.products);
+    if (duplicate) {
+      productSaveMessage = getDuplicateProductMessage(duplicate);
+      render();
+      return;
+    }
     state.products.push(copy);
+    productSaveMessage = "";
     selectedProductId = copy.id;
     saveState();
     render();
   }
 
   if (action === "delete") {
-    if (state.products.length === 1) return;
+    const product = getEditableProduct();
+    if (!product) return;
+    if (!isDraftProduct(product) && state.products.length === 1) {
+      window.alert("At least one product is required. Add another product before deleting this one.");
+      return;
+    }
+    if (!confirmProductDelete(product)) return;
+    productSaveMessage = "";
+    if (productDraft?.id === selectedProductId) {
+      const fallbackProductId = isNewProductDraft()
+        ? state.products[0]?.id ?? null
+        : productDraftOriginalId;
+      resetProductDraft();
+      selectedProductId = fallbackProductId;
+      render();
+      return;
+    }
     state.products = state.products.filter((product) => product.id !== selectedProductId);
     selectedProductId = state.products[0]?.id ?? null;
     saveState();
@@ -577,12 +2293,17 @@ async function handleAction(action) {
 
   if (action === "reset") {
     state = {
-      settings: { ...defaultSettings },
-      products: defaultProducts.map((product) => ({ ...product, id: crypto.randomUUID() })),
+      settings: { ...defaultSettings, dashboardCards: [...defaultDashboardCards] },
+      commissionMaster: cloneDefaultCommissionMaster(),
+      products: defaultProducts.map((product) => normalizeProduct({ ...product, id: crypto.randomUUID() })),
     };
     selectedProductId = state.products[0].id;
+    resetProductDraft();
     activeGroup = "Product";
     exchangeStatus = "";
+    productSaveMessage = "";
+    uploadStatus = "";
+    uploadStatusTone = "";
     saveState();
     render();
   }
@@ -616,15 +2337,20 @@ async function refreshRate() {
 function exportCsv() {
   const headers = [
     "Product Name",
+    "Category",
     "Design",
     "SKU",
     "ASIN",
-    "Product Cost Per Unit",
+    "HSN Code",
+    "Procurement Type",
+    "Product Cost Per Unit USD",
+    "Product Cost Per Unit INR",
     "Weight of Product Per Unit in KG",
     "Freight Per Unit in USD",
     "Insurance Per unit USD",
     "Country of Origin",
     "COO Benefit",
+    "BCD Rate",
     "Basic Custom Duty USD",
     "BasicCustom Duty INR",
     "SWS USD",
@@ -637,28 +2363,44 @@ function exportCsv() {
     "Overhead Cost INR",
     "Landing Cost till Warehouse INR",
     "Amazon Selling Price",
-    "GST on Amazon Selling Price",
+    "GST Amazon",
+    "Settlement Amazon",
+    "Profit Amazon",
+    "Deal Discount Percent",
+    "Deal Price INR",
+    "GST Amazon Deal",
     "Commission on Amazon",
     "FBA Pick Pack Fee INR",
     "FBA Weight Handling Fee INR",
     "Fixed Closing Fee INR",
     "TDS TCS Deduction",
-    "Aamazon Settlement",
-    "Profit on Selling in Amazon",
+    "Settlement Amazon Deal",
+    "Profit Amazon Deal",
+    "Margin Amazon",
+    "Margin Amazon Deal",
+    "ROI Amazon on Landing",
+    "ROI Amazon Deal on Landing",
+    "ROI Amazon on Product Cost",
+    "ROI Amazon Deal on Product Cost",
   ];
   const rows = state.products.map((product) => {
     const calc = calculateProduct(product);
     return [
       product.productName,
+      product.category,
       product.design,
       product.sku,
       product.asin,
+      product.hsnCode,
+      normalizeProcurementType(product.procurementType),
       product.productCostUsd,
+      calc.productCostInr,
       product.weightKg,
       calc.freightUsd,
       calc.insuranceUsd,
       product.countryOfOrigin,
       product.cooBenefit,
+      product.bcdRate,
       calc.basicCustomDutyUsd,
       calc.basicCustomDutyInr,
       calc.swsUsd,
@@ -671,14 +2413,25 @@ function exportCsv() {
       product.overheadCostInr,
       calc.landingCostInr,
       product.amazonSellingPriceInr,
-      calc.gstOnAmazonSellingPriceInr,
+      calc.gstAmazonInr,
+      calc.settlementAmazonInr,
+      calc.amazonProfitInr,
+      product.dealPriceRate,
+      calc.dealPriceInr,
+      calc.gstAmazonDealInr,
       product.commissionRate,
       product.pickPackFeeInr,
       product.weightHandlingFeeInr,
       product.fixedClosingFeeInr,
       product.tdsTcsRate,
-      calc.amazonSettlementInr,
-      calc.profitInr,
+      calc.settlementAmazonDealInr,
+      calc.amazonDealProfitInr,
+      calc.marginAmazon,
+      calc.marginAmazonDeal,
+      calc.roiAmazon,
+      calc.roiAmazonDeal,
+      calc.roiProductCostAmazon,
+      calc.roiProductCostAmazonDeal,
     ];
   });
   const csv = [headers, ...rows]

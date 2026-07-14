@@ -19,6 +19,10 @@
   ],
   "rewrites": [
     {
+      "source": "/master",
+      "destination": "/master.html"
+    },
+    {
       "source": "/((?!api/.*).*)",
       "destination": "/index.html"
     }

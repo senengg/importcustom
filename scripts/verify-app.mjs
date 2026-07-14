@@ -3,6 +3,8 @@ import path from "node:path";
 
 const requiredFiles = [
   "index.html",
+  "master.html",
+  "master/index.html",
   "src/app.js",
   "src/styles.css",
   "api/rates.js",
@@ -18,14 +20,139 @@ for (const file of requiredFiles) {
 }
 
 const appSource = await fs.readFile(path.join("src", "app.js"), "utf8");
+const indexSource = await fs.readFile("index.html", "utf8");
+const masterSource = await fs.readFile("master.html", "utf8");
+const nestedMasterSource = await fs.readFile(path.join("master", "index.html"), "utf8");
 const formulaChecks = [
   "freightPerKgUsd) * weightKg",
   "safeNumber(settings.insuranceRate) / 100",
-  "safeNumber(settings.bcdRate) / 100",
+  "customsBaseUsd * (safeNumber(bcdRate) / 100)",
   "safeNumber(settings.swsRate) / 100",
+  "normalizeProcurementType",
+  "isIndiaProcurement(product)",
+  "indiaProcurementDisabledFields",
+  "applyIndiaProcurementDefaults(product)",
+  "isProductFieldDisabled(product, key)",
+  "confirmProductDelete(product)",
+  "confirmMasterCategoryDelete(row)",
+  "[\"procurementType\", \"Procurement type\", \"select\", [\"Import\", \"India\"]]",
+  "[\"productCostInr\", \"India product cost / unit\", \"number\", \"INR\"]",
+  "domesticProduct ? 0 : safeNumber(product.productCostUsd)",
+  "domesticProduct ? productCostInr : importCostUsd * usdRate",
+  "Product Cost Per Unit INR",
   "gstRate / (100 + gstRate)",
-  "safeNumber(product.commissionRate) * sellingPriceInr",
+  "safeNumber(product.commissionRate) * priceInr",
+  "dealPriceRate",
+  "[\"dealPriceRate\", \"Deal discount %\", \"percentDecimal\", \"%\"]",
+  "[\"dealPriceInr\", \"Deal price\", \"number\", \"INR\"]",
+  "syncDealPriceFromRate(product)",
+  "syncDealRateFromPrice(product)",
+  "1 - safeNumber(product.dealPriceRate)",
+  "calculateAmazonAmounts(dealPriceInr",
+  "amazonProfitInr",
+  "amazonDealProfitInr",
+  "gstAmazonInr",
+  "settlementAmazonInr",
+  "gstAmazonDealInr",
+  "settlementAmazonDealInr",
+  "GST Amazon",
+  "Settlement Amazon",
+  "Profit Amazon",
+  "Profit Amazon Deal",
+  "GST Amazon Deal",
+  "Settlement Amazon Deal",
+  "marginAmazon",
+  "marginAmazonDeal",
+  "roiAmazon",
+  "roiAmazonDeal",
+  "roiProductCostAmazon",
+  "roiProductCostAmazonDeal",
+  "Margin Amazon Deal",
+  "amazon-margin",
+  "deal-margin",
+  "roi-landing",
+  "roi-deal-landing",
+  "roi-product-cost",
+  "ROI Amazon Deal on landing",
+  "ROI Amazon Deal on product cost",
+  "defaultDashboardCards",
+  "dashboardCardDefinitions",
+  "data-product-dashboard",
+  "data-dashboard-card",
+  "renderDashboardFilter()",
+  "renderProductDashboard(calc)",
+  "updateProductLiveDashboard(product)",
+  "normalizeDashboardCards",
+  "shouldShowDashboardCard(label)",
+  "data-action=\"discard-product\"",
+  "[\"hsnCode\", \"HSN Code\", \"text\"]",
+  "[\"category\", \"Category\", \"category\"]",
+  "defaultCommissionMaster",
+  "renderCommissionMaster()",
+  "renderMasterDataPage()",
+  "renderCategoryCommissionSection()",
+  "data-master-category-select",
+  "getSelectedCommissionRow()",
+  "renderInsuranceSection()",
+  "renderSwsSection()",
+  "renderWarehouseSection()",
+  "renderMasterPlaceholderSection",
+  "data-action=\"save-master\"",
+  "data-master-setting",
+  "saveMasterDraft()",
+  "Category Commission",
+  "applyCommissionForProductCategory(product)",
+  "function getLatestMasterCategory()",
+  "category: getLatestMasterCategory()",
+  "[\"countryOfOrigin\", \"Country of origin\", \"country\"]",
+  "[\"bcdRate\", \"BCD rate\", \"number\", \"%\"]",
+  "countryOfOrigin: getLatestCountryOfOrigin()",
+  "data-product-upload",
+  "handleBulkUpload",
+  "readXlsxRows(file)",
+  "createProductsFromUploadRows(rows)",
+  "uploadHeaderAliases",
+  "findDuplicateProductCode",
+  "validateUniqueProductCodes",
+  "getProductUniquenessMessage",
+  "updateProductMessage",
+  "data-product-message",
+  "findUploadProductMatch",
+  "mergeUploadedProduct",
+  "applyUploadedProducts",
+  "updated from Excel",
+  "getDuplicateProductMessage",
+  "Product not saved",
+  "productSaveMessage",
+  "Product cost / unit",
+  "Deal discount %",
+  "productDraft",
+  "productDraftMode",
+  "createNewProductDraft()",
+  "createProductEditDraft(product)",
+  "getEditableProduct()",
+  "saveProductDraft()",
+  "data-action=\"save-product\"",
+  "New Product Draft",
+  "Unsaved Product Changes",
+  "function getCurrentPage()",
+  "href=\"master/\"",
 ];
+
+const pageChecks = [
+  [indexSource, "src/app.js?v=20260714-delete-warning", "index app version"],
+  [indexSource, "src/styles.css?v=20260714-delete-warning", "index style version"],
+  [masterSource, "src/app.js?v=20260714-delete-warning", "master app version"],
+  [masterSource, "src/styles.css?v=20260714-delete-warning", "master style version"],
+  [nestedMasterSource, "../src/app.js?v=20260714-delete-warning", "nested master app version"],
+  [nestedMasterSource, "../src/styles.css?v=20260714-delete-warning", "nested master style version"],
+];
+
+for (const [source, expected, label] of pageChecks) {
+  if (!source.includes(expected)) {
+    throw new Error(`Page version check failed: ${label}`);
+  }
+}
 
 for (const formula of formulaChecks) {
   if (!appSource.includes(formula)) {
@@ -33,7 +160,27 @@ for (const formula of formulaChecks) {
   }
 }
 
+if (appSource.includes("Calculation Table") || appSource.includes("renderResultRow")) {
+  throw new Error("The all-products calculation table should not be rendered.");
+}
+
 const styleSource = await fs.readFile(path.join("src", "styles.css"), "utf8");
+if (!styleSource.includes("dashboard-filter")) {
+  throw new Error("Dashboard filter styles are missing.");
+}
+
+if (!styleSource.includes("[hidden]") || !styleSource.includes("display: none !important")) {
+  throw new Error("Hidden elements must be forced off-screen for filters and draft controls.");
+}
+
+if (!styleSource.includes("button:disabled")) {
+  throw new Error("Disabled save button styling is missing.");
+}
+
+if (!styleSource.includes("input:disabled") || !styleSource.includes("disabled-field")) {
+  throw new Error("Disabled product field styling is missing.");
+}
+
 if (styleSource.includes("letter-spacing: -")) {
   throw new Error("Negative letter spacing is not allowed.");
 }
