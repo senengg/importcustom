@@ -1,4 +1,5 @@
 analysis/
 node_modules/
+dist/
 .vercel/
 *.log

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/local-server.mjs",
-    "build": "node scripts/verify-app.mjs",
+    "build": "node scripts/build-app.mjs",
     "start": "node scripts/local-server.mjs"
   }
 }
