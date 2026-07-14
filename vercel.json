@@ -28,8 +28,3 @@
     }
   ]
 }
-{
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
-  ]
-}
