@@ -203,7 +203,7 @@ h2 {
 
 .settings-band {
   display: grid;
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, minmax(180px, 1fr)) minmax(300px, 1fr);
   gap: 12px;
   align-items: end;
   padding: 14px;
@@ -280,15 +280,21 @@ select {
 }
 
 .rate-tools {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rate-tools .ghost-button {
+  flex: 1 1 auto;
 }
 
 .status-text {
-  min-height: 18px;
+  flex: 0 0 auto;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .metric-grid {
@@ -743,7 +749,11 @@ tbody tr:hover {
 
 @media (max-width: 1120px) {
   .settings-band {
-    grid-template-columns: repeat(3, minmax(150px, 1fr));
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+
+  .rate-tools {
+    grid-column: 1 / -1;
   }
 
   .metric-grid {
