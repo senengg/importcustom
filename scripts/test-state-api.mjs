@@ -1,88 +1,72 @@
 import assert from "node:assert/strict";
 import handler from "../api/state.js";
 
-let storedValue = null;
+const profile = {
+  id: "user-1",
+  email: "senthil@datapower.co.in",
+  full_name: "Senthil K",
+  role: "admin",
+  workspace_id: "workspace-1",
+  active: true,
+};
+let workspaceDocument = null;
 
-globalThis.fetch = async (_url, options) => {
-  const [command, _key, value] = JSON.parse(options.body);
-  if (command === "GET") {
-    return new Response(JSON.stringify({ result: storedValue }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+globalThis.fetch = async (url, options = {}) => {
+  const path = new URL(url).pathname;
+  const method = options.method || "GET";
+  if (path === "/auth/v1/user") return Response.json({ id: profile.id, email: profile.email });
+  if (path === "/rest/v1/profiles") return Response.json([profile]);
+  if (path === "/rest/v1/workspace_state" && method === "GET") {
+    return Response.json(workspaceDocument ? [workspaceDocument] : []);
   }
-  if (command === "SET") {
-    storedValue = value;
-    return new Response(JSON.stringify({ result: "OK" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+  if (path === "/rest/v1/workspace_state" && method === "POST") {
+    workspaceDocument = JSON.parse(options.body);
+    return Response.json(null);
   }
-  return new Response(JSON.stringify({ error: "Unexpected command" }), { status: 400 });
+  if (path === "/rest/v1/workspace_state" && method === "PATCH") {
+    workspaceDocument = { ...workspaceDocument, ...JSON.parse(options.body) };
+    return Response.json([workspaceDocument]);
+  }
+  if (path === "/rest/v1/audit_logs") return Response.json(null);
+  return Response.json({ message: `Unexpected ${method} ${path}` }, { status: 500 });
 };
 
-function invoke(method, { password = "", body } = {}) {
+function invoke(method, body) {
   const result = { statusCode: 200, headers: {}, body: null };
-  const request = {
-    method,
-    headers: { "x-sync-password": password },
-    body,
-  };
+  const request = { method, headers: { cookie: "import_profit_access=access-test" }, body };
   const response = {
-    setHeader(name, value) {
-      result.headers[name] = value;
-    },
-    status(statusCode) {
-      result.statusCode = statusCode;
-      return this;
-    },
-    json(value) {
-      result.body = value;
-      return this;
-    },
+    setHeader(name, value) { result.headers[name] = value; },
+    status(statusCode) { result.statusCode = statusCode; return this; },
+    json(value) { result.body = value; return this; },
   };
   return handler(request, response).then(() => result);
 }
 
-delete process.env.UPSTASH_REDIS_REST_URL;
-delete process.env.UPSTASH_REDIS_REST_TOKEN;
-delete process.env.APP_SYNC_PASSWORD;
+delete process.env.SUPABASE_URL;
+delete process.env.SUPABASE_ANON_KEY;
+delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 assert.equal((await invoke("GET")).statusCode, 503);
 
-process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.test";
-process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
-process.env.APP_SYNC_PASSWORD = "correct-password";
-assert.equal((await invoke("GET", { password: "wrong-password" })).statusCode, 401);
+process.env.SUPABASE_URL = "https://example.supabase.test";
+process.env.SUPABASE_ANON_KEY = "anon-test";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "service-test";
 
-const empty = await invoke("GET", { password: "correct-password" });
+const empty = await invoke("GET");
 assert.equal(empty.statusCode, 200);
 assert.equal(empty.body.state, null);
+assert.equal(empty.body.version, 0);
 
-const state = {
-  settings: { usdRate: 96.2 },
-  commissionMaster: [],
-  products: [{ id: "product-1", productName: "Test Product" }],
-};
-const saved = await invoke("PUT", { password: "correct-password", body: { state } });
+const state = { settings: { usdRate: 96.2 }, commissionMaster: [], products: [] };
+const saved = await invoke("PUT", { state, version: 0 });
 assert.equal(saved.statusCode, 200);
-assert.equal(saved.body.saved, true);
+assert.equal(saved.body.version, 1);
 
-const loaded = await invoke("GET", { password: "correct-password" });
+const loaded = await invoke("GET");
 assert.deepEqual(loaded.body.state, state);
+assert.equal(loaded.body.version, 1);
 
-const emptyProductState = {
-  settings: { usdRate: 96.2 },
-  commissionMaster: [],
-  products: [],
-};
-const emptyProductSave = await invoke("PUT", {
-  password: "correct-password",
-  body: { state: emptyProductState },
-});
-assert.equal(emptyProductSave.statusCode, 200);
-assert.equal(emptyProductSave.body.saved, true);
+const conflict = await invoke("PUT", { state, version: 0 });
+assert.equal(conflict.statusCode, 409);
+assert.equal(conflict.body.code, "VERSION_CONFLICT");
 
-const emptyProductLoad = await invoke("GET", { password: "correct-password" });
-assert.deepEqual(emptyProductLoad.body.state, emptyProductState);
-
-console.log("Cloud state API verified.");
+console.log("Multi-user shared state API verified.");

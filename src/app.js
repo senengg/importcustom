@@ -1,8 +1,6 @@
 import { calculateSellingPriceFromDeal } from "./pricing.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
-const SYNC_PASSWORD_KEY = "import-profit-sync-password";
-const SYNC_MIGRATION_KEY = "import-profit-cloud-migration-v1";
 
 const defaultDashboardCards = [
   "freight",
@@ -275,12 +273,21 @@ let productDraftMode = "";
 let productDraftOriginalId = null;
 let productSaveMessage = "";
 let commissionPreview = null;
-let syncPassword = sessionStorage.getItem(SYNC_PASSWORD_KEY) || "";
+let currentUser = null;
+let authReady = false;
+let authMessage = "";
 let cloudSyncEnabled = false;
 let cloudSaveTimer = null;
+let cloudVersion = 0;
 let syncStatus = "Local only";
 let syncStatusTone = "local";
 let syncStatusTitle = "Data is currently stored on this device.";
+const authCallbackParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+const authCallback = {
+  accessToken: authCallbackParams.get("access_token"),
+  refreshToken: authCallbackParams.get("refresh_token"),
+  type: authCallbackParams.get("type"),
+};
 
 function createDefaultState() {
   return {
@@ -334,15 +341,33 @@ function setSyncStatus(label, tone, title) {
   if (text) text.textContent = label;
 }
 
+async function requestApi(path, { method = "GET", body } = {}) {
+  const response = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  const data = await response.json().catch(() => null);
+  if (!data || typeof data !== "object") throw new Error("The server returned an invalid response.");
+  if (!response.ok) {
+    const error = new Error(data.error || "The request failed.");
+    error.status = response.status;
+    error.code = data.code;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
 async function requestCloudState(method, body) {
   const response = await fetch("/api/state", {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Sync-Password": syncPassword,
-    },
+    headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
+    credentials: "same-origin",
   });
   const data = await response.json().catch(() => null);
   if (!data || typeof data !== "object") {
@@ -352,6 +377,7 @@ async function requestCloudState(method, body) {
     const error = new Error(data.error || "Cloud sync is unavailable.");
     error.status = response.status;
     error.code = data.code;
+    error.data = data;
     throw error;
   }
   if (method === "GET" && !("state" in data)) {
@@ -364,10 +390,26 @@ async function saveCloudStateNow() {
   if (!cloudSyncEnabled) return false;
   setSyncStatus("Saving…", "syncing", "Saving changes to shared cloud storage.");
   try {
-    await requestCloudState("PUT", { state });
+    const result = await requestCloudState("PUT", { state, version: cloudVersion });
+    cloudVersion = Number(result.version || cloudVersion);
     setSyncStatus("Synced", "synced", "All changes are saved and available on other devices.");
     return true;
   } catch (error) {
+    if (error.code === "VERSION_CONFLICT" && error.data?.state) {
+      cloudVersion = Number(error.data.version || cloudVersion);
+      const latestState = normalizeStoredState(error.data.state);
+      if (latestState) applyCloudState(latestState);
+      setSyncStatus("Updated", "error", error.message);
+      window.alert(error.message);
+      return false;
+    }
+    if (error.status === 401) {
+      currentUser = null;
+      authMessage = "Your session expired. Please sign in again.";
+      authReady = true;
+      render();
+      return false;
+    }
     setSyncStatus("Sync failed", "error", error.message);
     return false;
   }
@@ -468,6 +510,124 @@ async function initializeCloudSync({ forcePrompt = false } = {}) {
   if (migrationSucceeded) {
     localStorage.setItem(SYNC_MIGRATION_KEY, "complete");
   }
+}
+
+async function initializeAuthenticatedCloudSync() {
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = null;
+  setSyncStatus("Connecting…", "syncing", "Connecting to the shared workspace.");
+  try {
+    const cloudDocument = await requestCloudState("GET");
+    cloudSyncEnabled = true;
+    cloudVersion = Number(cloudDocument.version || 0);
+    const cloudState = normalizeStoredState(cloudDocument.state);
+    if (cloudState) {
+      applyCloudState(cloudState);
+      setSyncStatus("Synced", "synced", "Shared data loaded. Changes will sync across users.");
+    } else {
+      await saveCloudStateNow();
+    }
+  } catch (error) {
+    cloudSyncEnabled = false;
+    setSyncStatus("Offline", "error", error.message);
+  }
+}
+
+async function initializeAuth() {
+  try {
+    const session = await requestApi("/api/auth/session");
+    currentUser = session.user;
+    authMessage = "";
+  } catch (error) {
+    currentUser = null;
+    authMessage = error.code === "AUTH_NOT_CONFIGURED"
+      ? "Multi-user login needs Supabase configuration in Vercel."
+      : "";
+  }
+  authReady = true;
+  render();
+  if (currentUser) await initializeAuthenticatedCloudSync();
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  button.disabled = true;
+  authMessage = "Signing in…";
+  renderLoginMessage();
+  try {
+    const result = await requestApi("/api/auth/login", {
+      method: "POST",
+      body: { email: form.email.value, password: form.password.value },
+    });
+    currentUser = result.user;
+    authMessage = "";
+    render();
+    await initializeAuthenticatedCloudSync();
+  } catch (error) {
+    authMessage = error.message;
+    button.disabled = false;
+    renderLoginMessage();
+  }
+}
+
+async function handleSetPassword(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (form.password.value !== form.confirmPassword.value) {
+    authMessage = "The passwords do not match.";
+    renderLoginMessage();
+    return;
+  }
+  const button = form.querySelector("button");
+  button.disabled = true;
+  authMessage = "Saving password…";
+  renderLoginMessage();
+  try {
+    const result = await requestApi("/api/auth/password", {
+      method: "POST",
+      body: {
+        accessToken: authCallback.accessToken,
+        refreshToken: authCallback.refreshToken,
+        password: form.password.value,
+      },
+    });
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    currentUser = result.user;
+    authMessage = "";
+    render();
+    await initializeAuthenticatedCloudSync();
+  } catch (error) {
+    authMessage = error.message;
+    button.disabled = false;
+    renderLoginMessage();
+  }
+}
+
+async function handlePasswordRecovery() {
+  const email = document.querySelector('[data-login-form] input[name="email"]')?.value || "";
+  try {
+    const result = await requestApi("/api/auth/recover", { method: "POST", body: { email } });
+    authMessage = result.message;
+  } catch (error) {
+    authMessage = error.message;
+  }
+  renderLoginMessage();
+}
+
+function renderLoginMessage() {
+  const message = document.querySelector("[data-login-message]");
+  if (message) message.textContent = authMessage;
+}
+
+async function logout() {
+  await requestApi("/api/auth/logout", { method: "POST" }).catch(() => null);
+  currentUser = null;
+  cloudSyncEnabled = false;
+  cloudVersion = 0;
+  authMessage = "You have signed out.";
+  render();
 }
 
 function currency(value, currencyCode = "INR", decimals = 0) {
@@ -1240,8 +1400,50 @@ function summarize() {
   };
 }
 
+function renderLoginPage() {
+  const completingPassword = authCallback.accessToken && ["invite", "recovery"].includes(authCallback.type);
+  return `
+    <main class="login-page">
+      <section class="login-card">
+        <img class="brand-mark login-mark" src="import-profit-mark.png" alt="" />
+        <p class="eyebrow">Import and Profit App</p>
+        <h1>${completingPassword ? "Set your password" : (authReady ? "Sign in" : "Loading…")}</h1>
+        <p class="login-note">${completingPassword ? "Choose a password to complete your invitation or account recovery." : "Use the email address from your invitation. New accounts can only be created by an administrator."}</p>
+        ${authReady && completingPassword ? `
+          <form class="login-form" data-password-form>
+            <label class="form-field"><span>New password</span><div class="input-shell"><input name="password" type="password" minlength="8" required /></div></label>
+            <label class="form-field"><span>Confirm password</span><div class="input-shell"><input name="confirmPassword" type="password" minlength="8" required /></div></label>
+            <button class="primary-button" type="submit">Save password</button>
+          </form>
+        ` : authReady ? `
+          <form class="login-form" data-login-form>
+            <label class="form-field">
+              <span>Email</span>
+              <div class="input-shell"><input name="email" type="email" autocomplete="username" required /></div>
+            </label>
+            <label class="form-field">
+              <span>Password</span>
+              <div class="input-shell"><input name="password" type="password" autocomplete="current-password" required /></div>
+            </label>
+            <button class="primary-button" type="submit">Sign in</button>
+            <button class="ghost-button" type="button" data-recover-password>Forgot password</button>
+          </form>
+        ` : ""}
+        <p class="login-message" data-login-message>${escapeHtml(authMessage)}</p>
+      </section>
+    </main>
+  `;
+}
+
 function render() {
   const app = document.querySelector("#app");
+  if (!authReady || !currentUser) {
+    app.innerHTML = renderLoginPage();
+    document.querySelector("[data-login-form]")?.addEventListener("submit", handleLogin);
+    document.querySelector("[data-password-form]")?.addEventListener("submit", handleSetPassword);
+    document.querySelector("[data-recover-password]")?.addEventListener("click", handlePasswordRecovery);
+    return;
+  }
   const page = getCurrentPage();
 
   if (page === "master") {
@@ -1359,6 +1561,11 @@ function renderHeader(page) {
 
 function renderSyncControl() {
   return `
+    <span class="account-chip" title="${escapeAttribute(currentUser?.email || "")}">
+      <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
+      <small>${escapeHtml(currentUser?.role || "")}</small>
+    </span>
+    ${currentUser?.role === "admin" ? `<a class="nav-link" href="/admin">Users & Logs</a>` : ""}
     <button
       class="sync-control ${syncStatusTone}"
       data-action="sync"
@@ -1369,6 +1576,7 @@ function renderSyncControl() {
       <span class="sync-dot" aria-hidden="true"></span>
       <span data-sync-status>${escapeHtml(syncStatus)}</span>
     </button>
+    <button class="ghost-button compact" data-action="logout" type="button">Logout</button>
   `;
 }
 
@@ -2548,8 +2756,13 @@ async function handleAction(action) {
       cloudSaveTimer = null;
       await saveCloudStateNow();
     } else {
-      await initializeCloudSync({ forcePrompt: true });
+      await initializeAuthenticatedCloudSync();
     }
+  }
+
+  if (action === "logout") {
+    await logout();
+    return;
   }
 
   if (action === "save-product") {
@@ -2811,4 +3024,4 @@ function escapeAttribute(value) {
 }
 
 render();
-initializeCloudSync();
+initializeAuth();

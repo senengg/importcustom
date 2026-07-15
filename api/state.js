@@ -1,55 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
-
-const STATE_KEY = "import-profit-app:shared-state:v1";
-const MAX_BODY_BYTES = 1_000_000;
-
-function send(response, status, body) {
-  response.setHeader("Cache-Control", "no-store");
-  response.status(status).json(body);
-}
-
-function secretsMatch(received, expected) {
-  const receivedBuffer = Buffer.from(String(received || ""));
-  const expectedBuffer = Buffer.from(String(expected || ""));
-  return receivedBuffer.length === expectedBuffer.length && timingSafeEqual(receivedBuffer, expectedBuffer);
-}
-
-function getConfiguration() {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  const password = process.env.APP_SYNC_PASSWORD;
-  return url && token && password ? { url, token, password } : null;
-}
-
-async function runRedis(configuration, command) {
-  const upstream = await fetch(configuration.url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${configuration.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-    cache: "no-store",
-  });
-  const result = await upstream.json().catch(() => ({}));
-  if (!upstream.ok || result.error) {
-    throw new Error(result.error || `Storage returned ${upstream.status}`);
-  }
-  return result.result;
-}
-
-async function readBody(request) {
-  if (request.body && typeof request.body === "object") return request.body;
-  if (typeof request.body === "string") return JSON.parse(request.body);
-  let raw = "";
-  for await (const chunk of request) {
-    raw += chunk;
-    if (Buffer.byteLength(raw) > MAX_BODY_BYTES) {
-      throw new Error("Request is too large.");
-    }
-  }
-  return raw ? JSON.parse(raw) : {};
-}
+import { insertAuditLog, readJsonBody, requireUser, sendJson, supabaseFetch } from "./_lib/supabase.js";
 
 function isValidState(state) {
   return Boolean(
@@ -63,55 +12,124 @@ function isValidState(state) {
   );
 }
 
-export default async function handler(request, response) {
-  const configuration = getConfiguration();
-  if (!configuration) {
-    send(response, 503, {
-      error: "Cloud sync is not configured.",
-      code: "SYNC_NOT_CONFIGURED",
-    });
-    return;
-  }
+function productLabel(product) {
+  return product?.productName || product?.sku || product?.asin || "Product";
+}
 
-  if (!secretsMatch(request.headers["x-sync-password"], configuration.password)) {
-    send(response, 401, { error: "Incorrect sync password.", code: "INVALID_SYNC_PASSWORD" });
-    return;
+function buildAuditEntries(previousState, nextState) {
+  if (!previousState) {
+    return [{ action: "initialize", entityType: "workspace", summary: "Initialized shared app data.", newData: nextState }];
   }
+  const entries = [];
+  const previousProducts = new Map(previousState.products.map((product) => [product.id, product]));
+  const nextProducts = new Map(nextState.products.map((product) => [product.id, product]));
+
+  nextProducts.forEach((product, id) => {
+    const previous = previousProducts.get(id);
+    if (!previous) {
+      entries.push({ action: "create", entityType: "product", entityId: id, summary: `Created ${productLabel(product)}.`, newData: product });
+    } else if (JSON.stringify(previous) !== JSON.stringify(product)) {
+      entries.push({ action: "update", entityType: "product", entityId: id, summary: `Updated ${productLabel(product)}.`, oldData: previous, newData: product });
+    }
+  });
+  previousProducts.forEach((product, id) => {
+    if (!nextProducts.has(id)) {
+      entries.push({ action: "delete", entityType: "product", entityId: id, summary: `Deleted ${productLabel(product)}.`, oldData: product });
+    }
+  });
+  if (JSON.stringify(previousState.settings) !== JSON.stringify(nextState.settings)) {
+    entries.push({ action: "update", entityType: "settings", summary: "Updated app settings.", oldData: previousState.settings, newData: nextState.settings });
+  }
+  if (JSON.stringify(previousState.commissionMaster) !== JSON.stringify(nextState.commissionMaster)) {
+    entries.push({ action: "update", entityType: "commission_master", summary: "Updated commission master data.", oldData: previousState.commissionMaster, newData: nextState.commissionMaster });
+  }
+  return entries.length ? entries : [{ action: "save", entityType: "workspace", summary: "Saved shared app data." }];
+}
+
+async function getWorkspaceDocument(session) {
+  const rows = await supabaseFetch(
+    session.configuration,
+    `/rest/v1/workspace_state?workspace_id=eq.${encodeURIComponent(session.profile.workspace_id)}&select=state,version,updated_at`,
+    { service: true },
+  );
+  return rows?.[0] || null;
+}
+
+export default async function handler(request, response) {
+  const session = await requireUser(request, response);
+  if (!session) return;
 
   try {
     if (request.method === "GET") {
-      const stored = await runRedis(configuration, ["GET", STATE_KEY]);
-      const document = stored ? JSON.parse(stored) : null;
-      send(response, 200, {
+      const document = await getWorkspaceDocument(session);
+      sendJson(response, 200, {
         state: document?.state || null,
-        updatedAt: document?.updatedAt || null,
+        version: Number(document?.version || 0),
+        updatedAt: document?.updated_at || null,
       });
       return;
     }
 
     if (request.method === "PUT") {
-      const body = await readBody(request);
+      if (!['admin', 'editor'].includes(session.profile.role)) {
+        sendJson(response, 403, { error: "This account has read-only access." });
+        return;
+      }
+      const body = await readJsonBody(request);
       if (!isValidState(body.state)) {
-        send(response, 400, { error: "The submitted app data is invalid." });
+        sendJson(response, 400, { error: "The submitted app data is invalid." });
+        return;
+      }
+      const current = await getWorkspaceDocument(session);
+      const submittedVersion = Number(body.version || 0);
+      const currentVersion = Number(current?.version || 0);
+      if (submittedVersion !== currentVersion) {
+        sendJson(response, 409, {
+          error: "Another user updated the shared data. The latest version has been loaded.",
+          code: "VERSION_CONFLICT",
+          state: current?.state || null,
+          version: currentVersion,
+        });
         return;
       }
 
-      const document = {
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        state: body.state,
-      };
-      await runRedis(configuration, ["SET", STATE_KEY, JSON.stringify(document)]);
-      send(response, 200, { saved: true, updatedAt: document.updatedAt });
+      const nextVersion = currentVersion + 1;
+      const updatedAt = new Date().toISOString();
+      if (current) {
+        const updated = await supabaseFetch(
+          session.configuration,
+          `/rest/v1/workspace_state?workspace_id=eq.${encodeURIComponent(session.profile.workspace_id)}&version=eq.${currentVersion}`,
+          {
+            method: "PATCH",
+            service: true,
+            body: { state: body.state, version: nextVersion, updated_by: session.profile.id, updated_at: updatedAt },
+            headers: { Prefer: "return=representation" },
+          },
+        );
+        if (!updated?.length) {
+          const latest = await getWorkspaceDocument(session);
+          sendJson(response, 409, { error: "Another user updated the shared data.", code: "VERSION_CONFLICT", state: latest?.state || null, version: Number(latest?.version || 0) });
+          return;
+        }
+      } else {
+        await supabaseFetch(session.configuration, "/rest/v1/workspace_state", {
+          method: "POST",
+          service: true,
+          body: { workspace_id: session.profile.workspace_id, state: body.state, version: nextVersion, updated_by: session.profile.id, updated_at: updatedAt },
+          headers: { Prefer: "return=minimal" },
+        });
+      }
+
+      for (const entry of buildAuditEntries(current?.state || null, body.state)) {
+        await insertAuditLog(session.configuration, session.profile, entry);
+      }
+      sendJson(response, 200, { saved: true, version: nextVersion, updatedAt });
       return;
     }
 
     response.setHeader("Allow", "GET, PUT");
-    send(response, 405, { error: "Method not allowed." });
+    sendJson(response, 405, { error: "Method not allowed." });
   } catch (error) {
-    send(response, 502, {
-      error: "Cloud data is temporarily unavailable.",
-      detail: error.message,
-    });
+    sendJson(response, 502, { error: "Shared data is temporarily unavailable.", detail: error.message });
   }
 }

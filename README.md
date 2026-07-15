@@ -1,21 +1,52 @@
 # Custom Import Profit Calculator
 
-A Vercel-ready web app generated from `Custom Import.xlsx`.
+A shared Vercel app for import-cost, Amazon settlement, profit, margin and ROI calculations.
 
-## What It Does
+## Multi-user access
 
-- Calculates freight, insurance, customs duty, SWS, IGST, import cost, landed cost, Amazon settlement, profit, margin, and ROI.
-- Keeps the two sample products from the Excel workbook.
-- Supports editable product rows, manual USD/INR override, optional live USD/INR refresh, CSV export, duplicate, delete, and reset.
-- Stores edits locally as a fallback and can sync shared data across devices through Upstash Redis.
+- Individual email/password accounts through Supabase Auth.
+- Invitation-only registration.
+- One shared workspace for all authorised users.
+- Admin, editor and viewer roles.
+- Optimistic version checking to prevent silent overwrites.
+- Tamper-resistant activity logs retained for 30 days.
+- Local browser storage remains a temporary offline fallback.
 
-## Deploy To Vercel
+## Supabase setup
 
-1. Open this folder in Vercel as a new project.
-2. From the Vercel Marketplace, add an Upstash Redis database and connect it to the project. This supplies `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
-3. In the Vercel project's environment variables, add `APP_SYNC_PASSWORD` with a strong password known only to app users.
-4. Deploy or redeploy the project.
+1. Create a Supabase project.
+2. Open the Supabase SQL Editor and run `supabase/schema.sql`.
+3. Disable public sign-ups in Authentication settings.
+4. Configure custom SMTP for reliable invitations and password recovery.
+5. Add the production URL to the allowed Auth redirect URLs:
+   `https://importcustom.vercel.app/`
 
-On the first visit after setup, enter the sync password. Open the updated app first in the existing browser that contains the full product list. If cloud storage is empty, that browser automatically uploads its local data. Other browsers and devices then load the shared copy.
+## Vercel environment variables
 
-The app uses `/api/rates` for live USD/INR refresh and falls back to the workbook's manual rate if the exchange-rate provider is unavailable.
+Add these values to Production, Preview and Development as appropriate:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (mark as sensitive)
+- `APP_URL=https://importcustom.vercel.app`
+
+Environment-variable changes require a new deployment.
+
+## Initial invitations
+
+After applying the schema, run:
+
+```powershell
+$env:SUPABASE_URL="https://YOUR_PROJECT.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
+$env:APP_URL="https://importcustom.vercel.app"
+node scripts/invite-initial-users.mjs
+```
+
+This sends invitation emails to Senthil K, Selva S and Joel B as administrators. Invitation links open the app's password-setup screen.
+
+## Development
+
+- `npm run dev` starts the local preview with a local mock administrator.
+- `npm test` verifies the app and multi-user state API.
+- `npm run build` creates the Vercel `dist` output.

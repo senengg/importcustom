@@ -35,8 +35,52 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/api/auth/session") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    response.end(JSON.stringify({ user: { id: "local-admin", email: "senthil@datapower.co.in", full_name: "Senthil K", role: "admin", workspace_id: "local", active: true } }));
+    return;
+  }
+
+  if (url.pathname === "/api/auth/login") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    response.end(JSON.stringify({ user: { id: "local-admin", email: "senthil@datapower.co.in", full_name: "Senthil K", role: "admin", workspace_id: "local", active: true } }));
+    return;
+  }
+
+  if (url.pathname === "/api/auth/logout") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    response.end(JSON.stringify({ signedOut: true }));
+    return;
+  }
+
+  if (url.pathname === "/api/auth/password") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    response.end(JSON.stringify({ user: { id: "local-admin", email: "senthil@datapower.co.in", full_name: "Senthil K", role: "admin", workspace_id: "local", active: true } }));
+    return;
+  }
+
+  if (url.pathname === "/api/auth/recover") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    response.end(JSON.stringify({ sent: true, message: "If the account exists, a recovery email has been sent." }));
+    return;
+  }
+
+  if (url.pathname === "/api/users") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    response.end(JSON.stringify({ users: [{ id: "local-admin", email: "senthil@datapower.co.in", full_name: "Senthil K", role: "admin", active: true, last_login_at: new Date().toISOString() }] }));
+    return;
+  }
+
+  if (url.pathname === "/api/logs") {
+    response.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    response.end(JSON.stringify({ logs: [], retentionDays: 30 }));
+    return;
+  }
+
   const safePath = path.normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
-  const requested = safePath === "/" ? "/index.html" : safePath;
+  const requested = url.pathname === "/"
+    ? "/index.html"
+    : (url.pathname === "/admin" ? "/admin.html" : safePath);
   const filePath = path.join(root, requested);
 
   if (!filePath.startsWith(root)) {
