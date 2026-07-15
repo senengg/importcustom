@@ -1,13 +1,17 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import assert from "node:assert/strict";
+import { calculateSellingPriceFromDeal } from "../src/pricing.js";
 
 const requiredFiles = [
   "index.html",
   "master.html",
   "master/index.html",
   "src/app.js",
+  "src/pricing.js",
   "src/styles.css",
   "api/rates.js",
+  "api/state.js",
   "import-profit-mark.png",
   "vercel.json",
 ];
@@ -34,8 +38,14 @@ const formulaChecks = [
   "applyIndiaProcurementDefaults(product)",
   "isProductFieldDisabled(product, key)",
   "confirmProductDelete(product)",
+  "const productIdToDelete = isDraftProduct(product)",
+  "product.id !== productIdToDelete",
   "confirmMasterCategoryDelete(row)",
   "[\"procurementType\", \"Procurement type\", \"select\", [\"Import\", \"India\"]]",
+  "[\"color\", \"Color\", \"text\"]",
+  "colour: \"color\"",
+  "function getProductDisplayTitle(product)",
+  ".join(\" \")",
   "[\"productCostInr\", \"India product cost / unit\", \"number\", \"INR\"]",
   "domesticProduct ? 0 : safeNumber(product.productCostUsd)",
   "domesticProduct ? productCostInr : importCostUsd * usdRate",
@@ -46,7 +56,15 @@ const formulaChecks = [
   "[\"dealPriceRate\", \"Deal discount %\", \"percentDecimal\", \"%\"]",
   "[\"dealPriceInr\", \"Deal price\", \"number\", \"INR\"]",
   "syncDealPriceFromRate(product)",
-  "syncDealRateFromPrice(product)",
+  "syncSellingPriceFromDeal(product)",
+  "getUploadedSellingPrice(values)",
+  "calculateSellingPriceFromDeal(",
+  "const repairedSellingPrice = calculateSellingPriceFromDeal(",
+  "Deal discount must be at least 0% and less than 100%.",
+  "max=\"99.99\"",
+  "const twoDecimalPricingFields = new Set([",
+  "function formatTwoDecimalPricingInput(input)",
+  ".toFixed(2)",
   "1 - safeNumber(product.dealPriceRate)",
   "calculateAmazonAmounts(dealPriceInr",
   "amazonProfitInr",
@@ -108,6 +126,10 @@ const formulaChecks = [
   "[\"bcdRate\", \"BCD rate\", \"number\", \"%\"]",
   "countryOfOrigin: getLatestCountryOfOrigin()",
   "data-product-upload",
+  "data-product-list-scroll",
+  "function restoreProductListScroll(productListScrollTop)",
+  "restoreProductListScroll(productListScrollTop)",
+  "activeGroup = button.dataset.tab;",
   "handleBulkUpload",
   "readXlsxRows(file)",
   "createProductsFromUploadRows(rows)",
@@ -132,12 +154,25 @@ const formulaChecks = [
   "createProductEditDraft(product)",
   "getEditableProduct()",
   "saveProductDraft()",
+  "function hasProductDraftChanges(product = productDraft)",
+  "saveButton.hidden = !hasProductDraftChanges()",
+  "${hasChanges ? \"\" : \"hidden\"}",
+  "Commission (preview only)",
+  "function getProductWithCommissionPreview(product)",
+  "commissionPreview = {",
   "data-action=\"save-product\"",
   "New Product Draft",
   "Unsaved Product Changes",
   "function getCurrentPage()",
+  "initializeCloudSync()",
+  "saveCloudStateNow()",
+  "data-sync-control",
   "href=\"master/\"",
 ];
+
+assert.equal(calculateSellingPriceFromDeal(900, 0.1), 1000);
+assert.equal(calculateSellingPriceFromDeal(1699, 0.15), 1998.82);
+assert.equal(calculateSellingPriceFromDeal(900, 1), null);
 
 const pageChecks = [
   [indexSource, "src/app.js?v=20260714-delete-warning", "index app version"],
@@ -162,6 +197,10 @@ for (const formula of formulaChecks) {
 
 if (appSource.includes("Calculation Table") || appSource.includes("renderResultRow")) {
   throw new Error("The all-products calculation table should not be rendered.");
+}
+
+if (appSource.includes("At least one product is required") || appSource.includes("!stored.products.length")) {
+  throw new Error("An empty product list must be allowed and preserved.");
 }
 
 const styleSource = await fs.readFile(path.join("src", "styles.css"), "utf8");

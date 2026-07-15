@@ -23,6 +23,18 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/api/state") {
+    response.writeHead(503, {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end(JSON.stringify({
+      error: "Cloud sync is not configured in the local server.",
+      code: "SYNC_NOT_CONFIGURED",
+    }));
+    return;
+  }
+
   const safePath = path.normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
   const requested = safePath === "/" ? "/index.html" : safePath;
   const filePath = path.join(root, requested);

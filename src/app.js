@@ -1,4 +1,8 @@
+import { calculateSellingPriceFromDeal } from "./pricing.js";
+
 const STORAGE_KEY = "custom-import-profit-state-v1";
+const SYNC_PASSWORD_KEY = "import-profit-sync-password";
+const SYNC_MIGRATION_KEY = "import-profit-cloud-migration-v1";
 
 const defaultDashboardCards = [
   "freight",
@@ -44,6 +48,7 @@ const defaultProducts = [
     productName: "iPhone 17 Case",
     category: "Mobile Accessories",
     design: "Alles",
+    color: "",
     sku: "ABCD",
     asin: "1234ABC",
     hsnCode: "",
@@ -70,6 +75,7 @@ const defaultProducts = [
     productName: "iPhone 17 Pro Case",
     category: "Mobile Accessories",
     design: "Fusion",
+    color: "",
     sku: "DDSF",
     asin: "4323DSFD",
     hsnCode: "",
@@ -100,6 +106,7 @@ const fieldGroups = [
       ["productName", "Product name", "text"],
       ["category", "Category", "category"],
       ["design", "Design", "text"],
+      ["color", "Color", "text"],
       ["sku", "SKU", "text"],
       ["asin", "ASIN", "text"],
       ["hsnCode", "HSN Code", "text"],
@@ -131,7 +138,7 @@ const fieldGroups = [
       ["amazonSellingPriceInr", "Selling price", "number", "INR"],
       ["dealPriceRate", "Deal discount %", "percentDecimal", "%"],
       ["dealPriceInr", "Deal price", "number", "INR"],
-      ["commissionRate", "Commission", "percentDecimal", "%"],
+      ["commissionRate", "Commission (preview only)", "percentDecimal", "%"],
       ["pickPackFeeInr", "Pick pack fee", "number", "INR"],
       ["weightHandlingFeeInr", "Weight handling fee", "number", "INR"],
       ["fixedClosingFeeInr", "Fixed closing fee", "number", "INR"],
@@ -139,6 +146,12 @@ const fieldGroups = [
     ],
   },
 ];
+
+const twoDecimalPricingFields = new Set([
+  "amazonSellingPriceInr",
+  "dealPriceRate",
+  "dealPriceInr",
+]);
 
 const productSearchFilters = [
   { value: "all", label: "All fields" },
@@ -148,6 +161,7 @@ const productSearchFilters = [
   { value: "asin", label: "ASIN" },
   { value: "hsnCode", label: "HSN Code" },
   { value: "design", label: "Design" },
+  { value: "color", label: "Color" },
   { value: "procurementType", label: "Procurement" },
   { value: "countryOfOrigin", label: "Country" },
   { value: "cooBenefit", label: "COO benefit" },
@@ -158,6 +172,8 @@ const uploadHeaderAliases = {
   productname: "productName",
   category: "category",
   design: "design",
+  color: "color",
+  colour: "color",
   sku: "sku",
   asin: "asin",
   hsn: "hsnCode",
@@ -258,28 +274,15 @@ let productDraft = null;
 let productDraftMode = "";
 let productDraftOriginalId = null;
 let productSaveMessage = "";
+let commissionPreview = null;
+let syncPassword = sessionStorage.getItem(SYNC_PASSWORD_KEY) || "";
+let cloudSyncEnabled = false;
+let cloudSaveTimer = null;
+let syncStatus = "Local only";
+let syncStatusTone = "local";
+let syncStatusTitle = "Data is currently stored on this device.";
 
-function loadState() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (stored?.settings && Array.isArray(stored?.products) && stored.products.length) {
-      const settings = { ...defaultSettings, ...stored.settings };
-      settings.dashboardCards = normalizeDashboardCards(settings.dashboardCards);
-      return {
-        settings,
-        commissionMaster: normalizeCommissionMaster(stored.commissionMaster, stored.products),
-        products: stored.products.map((product) => normalizeProduct({
-          ...product,
-          category: product.category || "",
-          bcdRate: product.bcdRate ?? defaultSettings.bcdRate,
-          id: product.id || crypto.randomUUID(),
-        })),
-      };
-    }
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
-  }
-
+function createDefaultState() {
   return {
     settings: { ...defaultSettings, dashboardCards: [...defaultDashboardCards] },
     commissionMaster: cloneDefaultCommissionMaster(),
@@ -287,8 +290,184 @@ function loadState() {
   };
 }
 
+function normalizeStoredState(stored) {
+  if (!stored?.settings || !Array.isArray(stored?.products)) return null;
+  const settings = { ...defaultSettings, ...stored.settings };
+  settings.dashboardCards = normalizeDashboardCards(settings.dashboardCards);
+  return {
+    settings,
+    commissionMaster: normalizeCommissionMaster(stored.commissionMaster, stored.products),
+    products: stored.products.map((product) => normalizeProduct({
+      ...product,
+      category: product.category || "",
+      bcdRate: product.bcdRate ?? defaultSettings.bcdRate,
+      id: product.id || crypto.randomUUID(),
+    })),
+  };
+}
+
+function loadState() {
+  try {
+    const stored = normalizeStoredState(JSON.parse(localStorage.getItem(STORAGE_KEY)));
+    if (stored) return stored;
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+  return createDefaultState();
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  scheduleCloudSave();
+}
+
+function setSyncStatus(label, tone, title) {
+  syncStatus = label;
+  syncStatusTone = tone;
+  syncStatusTitle = title || label;
+  const control = document.querySelector("[data-sync-control]");
+  const text = document.querySelector("[data-sync-status]");
+  if (control) {
+    control.className = `sync-control ${tone}`;
+    control.title = syncStatusTitle;
+  }
+  if (text) text.textContent = label;
+}
+
+async function requestCloudState(method, body) {
+  const response = await fetch("/api/state", {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Sync-Password": syncPassword,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  const data = await response.json().catch(() => null);
+  if (!data || typeof data !== "object") {
+    throw new Error("Cloud sync returned an invalid response.");
+  }
+  if (!response.ok) {
+    const error = new Error(data.error || "Cloud sync is unavailable.");
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
+  }
+  if (method === "GET" && !("state" in data)) {
+    throw new Error("Cloud sync returned an incomplete response.");
+  }
+  return data;
+}
+
+async function saveCloudStateNow() {
+  if (!cloudSyncEnabled) return false;
+  setSyncStatus("Saving…", "syncing", "Saving changes to shared cloud storage.");
+  try {
+    await requestCloudState("PUT", { state });
+    setSyncStatus("Synced", "synced", "All changes are saved and available on other devices.");
+    return true;
+  } catch (error) {
+    setSyncStatus("Sync failed", "error", error.message);
+    return false;
+  }
+}
+
+function scheduleCloudSave() {
+  if (!cloudSyncEnabled) return;
+  clearTimeout(cloudSaveTimer);
+  setSyncStatus("Saving…", "syncing", "Waiting to save the latest changes.");
+  cloudSaveTimer = setTimeout(() => {
+    cloudSaveTimer = null;
+    saveCloudStateNow();
+  }, 700);
+}
+
+function applyCloudState(cloudState) {
+  state = cloudState;
+  selectedProductId = state.products[0]?.id ?? null;
+  selectedMasterCategoryId = state.commissionMaster[0]?.id ?? null;
+  masterDraft = null;
+  resetProductDraft();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  render();
+}
+
+async function initializeCloudSync({ forcePrompt = false } = {}) {
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = null;
+  setSyncStatus("Connecting…", "syncing", "Connecting to shared cloud storage.");
+
+  if (forcePrompt) {
+    syncPassword = "";
+    sessionStorage.removeItem(SYNC_PASSWORD_KEY);
+  }
+
+  let cloudDocument;
+  try {
+    cloudDocument = await requestCloudState("GET");
+  } catch (error) {
+    if (error.code === "SYNC_NOT_CONFIGURED") {
+      cloudSyncEnabled = false;
+      setSyncStatus("Local only", "local", "Cloud sync needs to be configured in Vercel.");
+      return;
+    }
+
+    if (error.status !== 401) {
+      cloudSyncEnabled = false;
+      setSyncStatus("Offline", "error", error.message);
+      return;
+    }
+
+    const enteredPassword = window.prompt("Enter the app sync password to load shared product data:");
+    if (!enteredPassword) {
+      cloudSyncEnabled = false;
+      setSyncStatus("Local only", "local", "Click to connect this device to shared data.");
+      return;
+    }
+
+    syncPassword = enteredPassword;
+    sessionStorage.setItem(SYNC_PASSWORD_KEY, syncPassword);
+    try {
+      cloudDocument = await requestCloudState("GET");
+    } catch (passwordError) {
+      cloudSyncEnabled = false;
+      sessionStorage.removeItem(SYNC_PASSWORD_KEY);
+      syncPassword = "";
+      setSyncStatus(
+        passwordError.status === 401 ? "Wrong password" : "Offline",
+        "error",
+        passwordError.message,
+      );
+      return;
+    }
+  }
+
+  cloudSyncEnabled = true;
+  const cloudState = normalizeStoredState(cloudDocument.state);
+  const migrationComplete = localStorage.getItem(SYNC_MIGRATION_KEY) === "complete";
+  let migrationSucceeded = true;
+
+  if (cloudState) {
+    if (
+      cloudState.products.length > 0 &&
+      !migrationComplete &&
+      state.products.length > cloudState.products.length
+    ) {
+      migrationSucceeded = await saveCloudStateNow();
+    } else {
+      applyCloudState(cloudState);
+      setSyncStatus("Synced", "synced", "Shared data loaded. Changes will sync across devices.");
+    }
+  } else if (state.products.length > defaultProducts.length) {
+    migrationSucceeded = await saveCloudStateNow();
+  } else {
+    setSyncStatus("Cloud ready", "synced", "Cloud storage is ready. Your next change will be shared.");
+  }
+
+  if (migrationSucceeded) {
+    localStorage.setItem(SYNC_MIGRATION_KEY, "complete");
+  }
 }
 
 function currency(value, currencyCode = "INR", decimals = 0) {
@@ -363,7 +542,21 @@ function normalizeProduct(product) {
   normalized.procurementType = normalizeProcurementType(normalized.procurementType);
   normalized.productCostInr = safeNumber(normalized.productCostInr);
   applyIndiaProcurementDefaults(normalized);
-  const sellingPriceInr = safeNumber(normalized.amazonSellingPriceInr);
+  let sellingPriceInr = safeNumber(normalized.amazonSellingPriceInr);
+  if (
+    sellingPriceInr <= 0 &&
+    safeNumber(normalized.dealPriceInr) > 0 &&
+    hasValue(normalized.dealPriceRate)
+  ) {
+    const repairedSellingPrice = calculateSellingPriceFromDeal(
+      normalized.dealPriceInr,
+      normalized.dealPriceRate,
+    );
+    if (repairedSellingPrice !== null) {
+      normalized.amazonSellingPriceInr = repairedSellingPrice;
+      sellingPriceInr = repairedSellingPrice;
+    }
+  }
 
   if (!hasValue(normalized.dealPriceRate) && !hasValue(normalized.dealPriceInr)) {
     normalized.dealPriceRate = 0;
@@ -395,6 +588,7 @@ function createNewProductDraft() {
     productName: "New Product",
     category: getLatestMasterCategory(),
     design: "",
+    color: "",
     sku: "",
     asin: "",
     hsnCode: "",
@@ -419,6 +613,24 @@ function isNewProductDraft() {
   return productDraftMode === "new";
 }
 
+function hasProductDraftChanges(product = productDraft) {
+  if (!product || !isDraftProduct(product)) return false;
+  if (isNewProductDraft()) return true;
+
+  const originalProduct = state.products.find((item) => item.id === productDraftOriginalId);
+  if (!originalProduct) return true;
+  const normalizedOriginal = normalizeProduct({ ...originalProduct });
+
+  return fieldGroups.some((group) =>
+    group.fields.some(([key, , type]) => {
+      if (["number", "percentDecimal"].includes(type)) {
+        return Math.abs(safeNumber(product[key]) - safeNumber(normalizedOriginal[key])) > 0.000001;
+      }
+      return String(product[key] ?? "") !== String(normalizedOriginal[key] ?? "");
+    }),
+  );
+}
+
 function getDraftProductLabel() {
   return isNewProductDraft() ? "New Product Draft" : "Unsaved Product Changes";
 }
@@ -429,6 +641,15 @@ function getSelectedProduct() {
   }
 
   return state.products.find((product) => product.id === selectedProductId) || state.products[0] || null;
+}
+
+function getProductWithCommissionPreview(product) {
+  if (!product || commissionPreview?.productId !== product.id) return product;
+  return { ...product, commissionRate: commissionPreview.rate };
+}
+
+function clearCommissionPreview() {
+  commissionPreview = null;
 }
 
 function getListedProducts() {
@@ -446,6 +667,17 @@ function getProductListCountLabel(visibleCount = getListedProducts().length) {
   return visibleCount === totalCount
     ? `${totalCount} products${suffix}`
     : `${visibleCount} of ${totalCount} products${suffix}`;
+}
+
+function getProductListScrollTop() {
+  return document.querySelector("[data-product-list-scroll]")?.scrollTop ?? 0;
+}
+
+function restoreProductListScroll(productListScrollTop) {
+  const productListScroll = document.querySelector("[data-product-list-scroll]");
+  if (productListScroll) {
+    productListScroll.scrollTop = productListScrollTop;
+  }
 }
 
 function resetProductDraft() {
@@ -476,6 +708,13 @@ function getProductIdentityLabel(product) {
   return product.productName || product.sku || product.asin || "another product";
 }
 
+function getProductDisplayTitle(product) {
+  return [product?.productName || "Untitled product", product?.design, product?.color]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
 function getDuplicateProductMessage(duplicate) {
   if (!duplicate) return "";
   return `Duplicate ${duplicate.label} "${duplicate.value}" already exists in ${getProductIdentityLabel(duplicate.product)}. Product not saved.`;
@@ -503,7 +742,13 @@ function updateProductMessage(message) {
 
   const saveButton = document.querySelector('[data-action="save-product"]');
   if (saveButton) {
+    saveButton.hidden = !hasProductDraftChanges();
     saveButton.disabled = Boolean(message);
+  }
+
+  const discardButton = document.querySelector('[data-action="discard-product"]');
+  if (discardButton) {
+    discardButton.hidden = !hasProductDraftChanges();
   }
 }
 
@@ -595,6 +840,7 @@ function mergeUploadedProduct(existingProduct, uploadedProduct) {
     "productName",
     "category",
     "design",
+    "color",
     "sku",
     "asin",
     "hsnCode",
@@ -648,6 +894,7 @@ function applyUploadedProducts(products) {
 
 function saveProductDraft() {
   if (!productDraft) return;
+  const productListScrollTop = getProductListScrollTop();
   const savedProduct = normalizeProduct({ ...productDraft });
   applyCommissionForProductCategory(savedProduct);
   const duplicate = findDuplicateProductCode(
@@ -658,6 +905,7 @@ function saveProductDraft() {
   if (duplicate) {
     productSaveMessage = getDuplicateProductMessage(duplicate);
     render();
+    restoreProductListScroll(productListScrollTop);
     return;
   }
   if (isNewProductDraft()) {
@@ -671,10 +919,12 @@ function saveProductDraft() {
     state.settings.lastCountryOfOrigin = savedProduct.countryOfOrigin;
   }
   selectedProductId = savedProduct.id;
+  clearCommissionPreview();
   resetProductDraft();
   productSaveMessage = "";
   saveState();
   render();
+  restoreProductListScroll(productListScrollTop);
 }
 
 function syncDealPriceFromRate(product) {
@@ -683,24 +933,35 @@ function syncDealPriceFromRate(product) {
   );
 }
 
-function syncDealRateFromPrice(product) {
-  const sellingPriceInr = safeNumber(product.amazonSellingPriceInr);
-  product.dealPriceRate = sellingPriceInr
-    ? (sellingPriceInr - safeNumber(product.dealPriceInr)) / sellingPriceInr
-    : 0;
+function syncSellingPriceFromDeal(product) {
+  const sellingPrice = calculateSellingPriceFromDeal(product.dealPriceInr, product.dealPriceRate);
+  if (sellingPrice === null) return false;
+
+  product.amazonSellingPriceInr = sellingPrice;
+  return true;
 }
 
 function updateDealLinkedFields(product, changedKey) {
+  const sellingPriceInput = document.querySelector('[data-product-field="amazonSellingPriceInr"]');
   const rateInput = document.querySelector('[data-product-field="dealPriceRate"]');
   const priceInput = document.querySelector('[data-product-field="dealPriceInr"]');
 
+  if (changedKey !== "amazonSellingPriceInr" && sellingPriceInput) {
+    sellingPriceInput.value = safeNumber(product.amazonSellingPriceInr).toFixed(2);
+  }
+
   if (changedKey !== "dealPriceRate" && rateInput) {
-    rateInput.value = String(roundCurrencyValue(safeNumber(product.dealPriceRate) * 100));
+    rateInput.value = (safeNumber(product.dealPriceRate) * 100).toFixed(2);
   }
 
   if (changedKey !== "dealPriceInr" && priceInput) {
-    priceInput.value = String(roundCurrencyValue(product.dealPriceInr));
+    priceInput.value = safeNumber(product.dealPriceInr).toFixed(2);
   }
+}
+
+function formatTwoDecimalPricingInput(input) {
+  if (!twoDecimalPricingFields.has(input.dataset.productField)) return;
+  input.value = safeNumber(input.value).toFixed(2);
 }
 
 function getDealPriceInr(product) {
@@ -999,7 +1260,9 @@ function render() {
   const summary = summarize();
   const selectedProduct = getSelectedProduct();
   selectedProductId = selectedProduct?.id ?? null;
-  const selectedCalc = selectedProduct ? calculateProduct(selectedProduct) : null;
+  const selectedCalc = selectedProduct
+    ? calculateProduct(getProductWithCommissionPreview(selectedProduct))
+    : null;
 
   app.innerHTML = `
     <main class="shell">
@@ -1012,6 +1275,7 @@ function render() {
           </div>
         </div>
         <div class="header-actions">
+          ${renderSyncControl()}
           <a class="nav-link" href="master/">Master Data</a>
           <label class="ghost-button file-button" title="Upload Excel">
             Upload Excel
@@ -1043,7 +1307,7 @@ function render() {
             <button class="icon-button small" data-action="add" title="Add product" aria-label="Add product">+</button>
           </div>
           ${renderProductSearch()}
-          <div class="list-scroll">
+          <div class="list-scroll" data-product-list-scroll>
             ${getListedProducts().map((product) => renderProductRow(product)).join("")}
           </div>
           <div class="empty-filter" data-filter-empty hidden>No products match this search.</div>
@@ -1085,10 +1349,26 @@ function renderHeader(page) {
         </div>
       </div>
       <div class="header-actions">
+        ${renderSyncControl()}
         <a class="nav-link" href="../index.html">Products</a>
         <a class="nav-link active" href="../master/">Master Data</a>
       </div>
     </header>
+  `;
+}
+
+function renderSyncControl() {
+  return `
+    <button
+      class="sync-control ${syncStatusTone}"
+      data-action="sync"
+      data-sync-control
+      type="button"
+      title="${escapeAttribute(syncStatusTitle)}"
+    >
+      <span class="sync-dot" aria-hidden="true"></span>
+      <span data-sync-status>${escapeHtml(syncStatus)}</span>
+    </button>
   `;
 }
 
@@ -1301,7 +1581,7 @@ function renderProductRow(product) {
   return `
     <button class="product-row ${active} ${draft ? "draft" : ""}" data-select-product="${product.id}" data-product-row="${product.id}">
       <span>
-        <strong>${escapeHtml(product.productName || "Untitled product")}</strong>
+        <strong>${escapeHtml(getProductDisplayTitle(product))}</strong>
         <small>SKU: ${escapeHtml(product.sku || "-")} | ASIN: ${escapeHtml(product.asin || "-")} | HSN: ${escapeHtml(product.hsnCode || "-")}</small>
         <small>${draft ? (isNewProductDraft() ? "Draft, not saved" : "Unsaved changes") : `Category: ${escapeHtml(product.category || "-")}`}</small>
       </span>
@@ -1317,7 +1597,7 @@ function renderProductSearch() {
         <input
           data-product-search
           type="search"
-          placeholder="Search product, category, SKU, ASIN, HSN"
+          placeholder="Search product, category, color, SKU, ASIN, HSN"
           value="${escapeAttribute(productSearchQuery)}"
           aria-label="Search products"
         />
@@ -1343,16 +1623,17 @@ function renderProductSearch() {
 
 function renderEditor(product, calc) {
   const draft = isDraftProduct(product);
+  const hasChanges = hasProductDraftChanges(product);
   const productMessage = productSaveMessage || getProductUniquenessMessage(product);
   return `
     <div class="editor-head">
       <div>
         <p class="eyebrow">${draft ? getDraftProductLabel() : "Selected Product"}</p>
-        <h2>${escapeHtml(product.productName || "Untitled product")}</h2>
+        <h2>${escapeHtml(getProductDisplayTitle(product))}</h2>
       </div>
       <div class="row-actions ${draft ? "draft-actions" : ""}">
-        <button class="primary-button compact" data-action="save-product" ${productMessage ? "disabled" : ""}>Save Product</button>
-        <button class="ghost-button compact" data-action="discard-product" ${draft ? "" : "hidden"}>Discard</button>
+        <button class="primary-button compact" data-action="save-product" ${hasChanges ? "" : "hidden"} ${productMessage ? "disabled" : ""}>Save Product</button>
+        <button class="ghost-button compact" data-action="discard-product" ${hasChanges ? "" : "hidden"}>Discard</button>
         <button class="icon-button" data-action="duplicate" title="Duplicate" aria-label="Duplicate">⧉</button>
         <button class="icon-button danger" data-action="delete" title="Delete" aria-label="Delete">×</button>
       </div>
@@ -1411,7 +1692,8 @@ function shouldRenderProductField(product, [key]) {
 }
 
 function renderProductField(product, [key, label, type, suffixOrOptions]) {
-  const rawValue = product[key] ?? "";
+  const previewProduct = getProductWithCommissionPreview(product);
+  const rawValue = previewProduct[key] ?? "";
   const disabled = isProductFieldDisabled(product, key);
   const disabledAttribute = disabled ? " disabled" : "";
   let control = "";
@@ -1444,21 +1726,22 @@ function renderProductField(product, [key, label, type, suffixOrOptions]) {
     `;
   } else {
     const value = type === "percentDecimal" ? safeNumber(rawValue) * 100 : rawValue;
+    const displayValue = twoDecimalPricingFields.has(key)
+      ? safeNumber(value).toFixed(2)
+      : value;
     const isTextInput = type === "text" || type === "country";
     const listAttribute = type === "country" ? ` list="country-options"` : "";
-    const readonlyAttribute =
-      key === "commissionRate" && getCommissionForCategory(product.category) !== null
-        ? " readonly"
-        : "";
+    const numberLimits = key === "dealPriceRate" ? ` min="0" max="99.99"` : "";
+    const numberStep = twoDecimalPricingFields.has(key) ? "0.01" : "0.001";
     control = `
       <input
         data-product-field="${key}"
         type="${isTextInput ? "text" : "number"}"
-        step="${isTextInput ? "" : "0.001"}"
+        step="${isTextInput ? "" : numberStep}"
         ${listAttribute}
-        ${readonlyAttribute}
+        ${numberLimits}
         ${disabledAttribute}
-        value="${escapeAttribute(value)}"
+        value="${escapeAttribute(displayValue)}"
       />
     `;
   }
@@ -1545,7 +1828,7 @@ function renderProductDashboard(calc) {
 }
 
 function updateProductLiveDashboard(product) {
-  const calc = calculateProduct(product);
+  const calc = calculateProduct(getProductWithCommissionPreview(product));
   const dashboard = document.querySelector("[data-product-dashboard]");
   if (dashboard) {
     dashboard.innerHTML = renderProductDashboard(calc);
@@ -1621,6 +1904,7 @@ function bindEvents() {
   document.querySelectorAll("[data-product-field]").forEach((input) => {
     input.addEventListener("input", handleProductInput);
     input.addEventListener("change", handleProductInput);
+    input.addEventListener("blur", (event) => formatTwoDecimalPricingInput(event.currentTarget));
   });
 
   document.querySelectorAll("[data-dashboard-card]").forEach((input) => {
@@ -1684,16 +1968,21 @@ function bindEvents() {
 
   document.querySelectorAll("[data-select-product]").forEach((button) => {
     button.addEventListener("click", () => {
+      const productListScrollTop = getProductListScrollTop();
+      clearCommissionPreview();
       selectedProductId = button.dataset.selectProduct;
       productSaveMessage = "";
       render();
+      restoreProductListScroll(productListScrollTop);
     });
   });
 
   document.querySelectorAll("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
+      const productListScrollTop = getProductListScrollTop();
       activeGroup = button.dataset.tab;
       render();
+      restoreProductListScroll(productListScrollTop);
     });
   });
 
@@ -1997,6 +2286,7 @@ function createProductFromUploadRow(row, columnMap) {
     productName: uploadText(values.productName) || uploadText(values.sku) || "Imported Product",
     category: uploadText(values.category) || getLatestMasterCategory(),
     design: uploadText(values.design),
+    color: uploadText(values.color),
     sku: uploadText(values.sku),
     asin: uploadText(values.asin),
     hsnCode: uploadText(values.hsnCode),
@@ -2010,7 +2300,7 @@ function createProductFromUploadRow(row, columnMap) {
     cooBenefit: parseUploadYesNo(values.cooBenefit),
     bcdRate: parseUploadPercentagePoints(values.bcdRate, state.settings.bcdRate),
     gstRate: parseUploadPercentagePoints(values.gstRate, defaultProducts[0].gstRate),
-    amazonSellingPriceInr: parseUploadNumber(values.amazonSellingPriceInr),
+    amazonSellingPriceInr: getUploadedSellingPrice(values),
     dealPriceRate: parseUploadDiscountRate(values.dealPriceRate),
     dealPriceInr: hasUploadValue(values.dealPriceInr) ? parseUploadNumber(values.dealPriceInr) : undefined,
   };
@@ -2055,6 +2345,27 @@ function parseUploadDiscountRate(value) {
   if (!hasUploadValue(value)) return 0;
   const parsed = parseUploadNumber(value);
   return Math.abs(parsed) > 1 ? parsed / 100 : parsed;
+}
+
+function getUploadedSellingPrice(values) {
+  const uploadedSellingPrice = hasUploadValue(values.amazonSellingPriceInr)
+    ? parseUploadNumber(values.amazonSellingPriceInr)
+    : undefined;
+
+  if (!hasUploadValue(values.dealPriceInr) || !hasUploadValue(values.dealPriceRate)) {
+    return uploadedSellingPrice;
+  }
+
+  const dealPriceRate = parseUploadDiscountRate(values.dealPriceRate);
+  const sellingPrice = calculateSellingPriceFromDeal(
+    parseUploadNumber(values.dealPriceInr),
+    dealPriceRate,
+  );
+  if (sellingPrice === null) {
+    throw new Error("Excel Deal discount must be at least 0% and less than 100%.");
+  }
+
+  return sellingPrice;
 }
 
 function parseUploadYesNo(value) {
@@ -2151,21 +2462,35 @@ function saveMasterDraft() {
 
 function handleProductInput(event) {
   const key = event.currentTarget.dataset.productField;
+  if (key === "commissionRate") {
+    const selectedProduct = getSelectedProduct();
+    if (!selectedProduct) return;
+    commissionPreview = {
+      productId: selectedProduct.id,
+      rate: safeNumber(event.currentTarget.value) / 100,
+    };
+    updateProductLiveDashboard(selectedProduct);
+    return;
+  }
+
   const product = getEditableProduct();
   if (!product) return;
   const draft = isDraftProduct(product);
   productSaveMessage = "";
+  let pricingMessage = "";
 
-  const percentFields = new Set(["commissionRate", "tdsTcsRate"]);
-  const textFields = new Set(["productName", "category", "design", "sku", "asin", "hsnCode", "procurementType", "countryOfOrigin", "cooBenefit"]);
+  const percentFields = new Set(["tdsTcsRate"]);
+  const textFields = new Set(["productName", "category", "design", "color", "sku", "asin", "hsnCode", "procurementType", "countryOfOrigin", "cooBenefit"]);
 
   if (key === "dealPriceRate") {
     product.dealPriceRate = safeNumber(event.currentTarget.value) / 100;
-    syncDealPriceFromRate(product);
+    if (!syncSellingPriceFromDeal(product)) {
+      pricingMessage = "Deal discount must be at least 0% and less than 100%.";
+    }
     updateDealLinkedFields(product, key);
   } else if (key === "dealPriceInr") {
     product.dealPriceInr = safeNumber(event.currentTarget.value);
-    syncDealRateFromPrice(product);
+    syncSellingPriceFromDeal(product);
     updateDealLinkedFields(product, key);
   } else if (percentFields.has(key)) {
     product[key] = safeNumber(event.currentTarget.value) / 100;
@@ -2190,9 +2515,20 @@ function handleProductInput(event) {
     }
   }
 
-  productSaveMessage = getProductUniquenessMessage(product);
+  if (draft && !isNewProductDraft() && !hasProductDraftChanges(product)) {
+    resetProductDraft();
+  }
+
+  productSaveMessage = pricingMessage || getProductUniquenessMessage(product);
   updateProductMessage(productSaveMessage);
   updateProductLiveDashboard(product);
+
+  if (event.type === "change" && twoDecimalPricingFields.has(key)) {
+    const value = key === "dealPriceRate"
+      ? safeNumber(product.dealPriceRate) * 100
+      : safeNumber(product[key]);
+    event.currentTarget.value = value.toFixed(2);
+  }
 
   if (!draft) {
     saveState();
@@ -2206,6 +2542,16 @@ function handleProductInput(event) {
 }
 
 async function handleAction(action) {
+  if (action === "sync") {
+    if (cloudSyncEnabled) {
+      clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = null;
+      await saveCloudStateNow();
+    } else {
+      await initializeCloudSync({ forcePrompt: true });
+    }
+  }
+
   if (action === "save-product") {
     saveProductDraft();
   }
@@ -2216,6 +2562,7 @@ async function handleAction(action) {
       ? state.products[0]?.id ?? null
       : productDraftOriginalId;
     resetProductDraft();
+    clearCommissionPreview();
     productSaveMessage = "";
     selectedProductId = fallbackProductId;
     render();
@@ -2236,6 +2583,7 @@ async function handleAction(action) {
 
   if (action === "add") {
     productSaveMessage = "";
+    clearCommissionPreview();
     if (!productDraft) {
       productDraft = createNewProductDraft();
       productDraftMode = "new";
@@ -2261,6 +2609,7 @@ async function handleAction(action) {
       return;
     }
     state.products.push(copy);
+    clearCommissionPreview();
     productSaveMessage = "";
     selectedProductId = copy.id;
     saveState();
@@ -2268,24 +2617,24 @@ async function handleAction(action) {
   }
 
   if (action === "delete") {
-    const product = getEditableProduct();
+    const product = getSelectedProduct();
     if (!product) return;
-    if (!isDraftProduct(product) && state.products.length === 1) {
-      window.alert("At least one product is required. Add another product before deleting this one.");
-      return;
-    }
+    const deletingNewDraft = isDraftProduct(product) && isNewProductDraft();
     if (!confirmProductDelete(product)) return;
+    clearCommissionPreview();
     productSaveMessage = "";
-    if (productDraft?.id === selectedProductId) {
-      const fallbackProductId = isNewProductDraft()
-        ? state.products[0]?.id ?? null
-        : productDraftOriginalId;
+    if (deletingNewDraft) {
       resetProductDraft();
-      selectedProductId = fallbackProductId;
+      selectedProductId = state.products[0]?.id ?? null;
       render();
       return;
     }
-    state.products = state.products.filter((product) => product.id !== selectedProductId);
+
+    const productIdToDelete = isDraftProduct(product)
+      ? productDraftOriginalId
+      : selectedProductId;
+    resetProductDraft();
+    state.products = state.products.filter((product) => product.id !== productIdToDelete);
     selectedProductId = state.products[0]?.id ?? null;
     saveState();
     render();
@@ -2339,6 +2688,7 @@ function exportCsv() {
     "Product Name",
     "Category",
     "Design",
+    "Color",
     "SKU",
     "ASIN",
     "HSN Code",
@@ -2389,6 +2739,7 @@ function exportCsv() {
       product.productName,
       product.category,
       product.design,
+      product.color,
       product.sku,
       product.asin,
       product.hsnCode,
@@ -2460,3 +2811,4 @@ function escapeAttribute(value) {
 }
 
 render();
+initializeCloudSync();

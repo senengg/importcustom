@@ -107,6 +107,50 @@ h2 {
   gap: 10px;
 }
 
+.sync-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8a97a3;
+}
+
+.sync-control.synced {
+  border-color: #a9d9cf;
+  color: var(--teal-dark);
+}
+
+.sync-control.synced .sync-dot {
+  background: var(--teal);
+}
+
+.sync-control.syncing .sync-dot {
+  background: #d99b28;
+}
+
+.sync-control.error {
+  border-color: #e6b5b5;
+  color: var(--rose);
+}
+
+.sync-control.error .sync-dot {
+  background: var(--rose);
+}
+
 .section-title {
   justify-content: space-between;
   margin-bottom: 12px;
