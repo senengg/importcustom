@@ -47,6 +47,9 @@ This sends invitation emails to Senthil K, Selva S and Joel B as administrators.
 
 ## Development
 
-- `npm run dev` starts the local preview with a local mock administrator.
+- Double-click `Start Local App.cmd` to open the app at `http://localhost:4173`.
+- `npm run dev` starts the same local app from a terminal.
+- The local app uses the production authentication API and shared cloud data by default.
+- Set `LOCAL_API_MODE=mock` before starting only when an offline mock administrator is required.
 - `npm test` verifies the app and multi-user state API.
 - `npm run build` creates the Vercel `dist` output.

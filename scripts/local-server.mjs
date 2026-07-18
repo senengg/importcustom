@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
+const cloudOrigin = String(process.env.CLOUD_APP_ORIGIN || "https://importcustom.vercel.app").replace(/\/$/, "");
+const useCloudApi = String(process.env.LOCAL_API_MODE || "cloud").toLowerCase() !== "mock";
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -17,6 +19,11 @@ const mime = {
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
+
+  if (useCloudApi && url.pathname.startsWith("/api/")) {
+    await proxyCloudApi(request, response, url);
+    return;
+  }
 
   if (url.pathname === "/api/rates") {
     await handleRates(url, response);
@@ -103,7 +110,61 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(port, () => {
   console.log(`Custom Import Profit Calculator: http://localhost:${port}`);
+  console.log(useCloudApi
+    ? `Authentication and shared data: ${cloudOrigin}`
+    : "Authentication and shared data: local mock mode");
 });
+
+async function proxyCloudApi(request, response, url) {
+  try {
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(request.headers)) {
+      if (!value || ["host", "connection", "content-length"].includes(name.toLowerCase())) continue;
+      headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+    }
+
+    let body;
+    if (!['GET', 'HEAD'].includes(request.method || "GET")) {
+      const chunks = [];
+      let length = 0;
+      for await (const chunk of request) {
+        length += chunk.length;
+        if (length > 1_000_000) throw new Error("The request is too large.");
+        chunks.push(chunk);
+      }
+      body = chunks.length ? Buffer.concat(chunks) : undefined;
+    }
+
+    const upstream = await fetch(`${cloudOrigin}${url.pathname}${url.search}`, {
+      method: request.method,
+      headers,
+      body,
+      redirect: "manual",
+    });
+
+    for (const [name, value] of upstream.headers) {
+      if (["connection", "content-encoding", "content-length", "set-cookie", "transfer-encoding"].includes(name.toLowerCase())) continue;
+      response.setHeader(name, value);
+    }
+
+    const cookies = upstream.headers.getSetCookie?.() || [];
+    if (cookies.length) {
+      response.setHeader("set-cookie", cookies.map((value) => value.replace(/;\s*Secure/gi, "")));
+    }
+
+    response.writeHead(upstream.status);
+    response.end(Buffer.from(await upstream.arrayBuffer()));
+  } catch (error) {
+    response.writeHead(502, {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end(JSON.stringify({
+      error: "The local app could not reach the cloud service.",
+      detail: error.message,
+    }));
+  }
+}
 
 async function handleRates(url, response) {
   const from = (url.searchParams.get("from") || "USD").toUpperCase();
