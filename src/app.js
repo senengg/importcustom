@@ -1,4 +1,4 @@
-import { calculateSellingPriceFromDeal } from "./pricing.js";
+import { calculateDealPriceFromSelling, calculateSellingPriceFromDeal } from "./pricing.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
 
@@ -1088,9 +1088,14 @@ function saveProductDraft() {
 }
 
 function syncDealPriceFromRate(product) {
-  product.dealPriceInr = roundCurrencyValue(
-    safeNumber(product.amazonSellingPriceInr) * (1 - safeNumber(product.dealPriceRate)),
+  const dealPrice = calculateDealPriceFromSelling(
+    product.amazonSellingPriceInr,
+    product.dealPriceRate,
   );
+  if (dealPrice === null) return false;
+
+  product.dealPriceInr = dealPrice;
+  return true;
 }
 
 function syncSellingPriceFromDeal(product) {
@@ -2692,7 +2697,7 @@ function handleProductInput(event) {
 
   if (key === "dealPriceRate") {
     product.dealPriceRate = safeNumber(event.currentTarget.value) / 100;
-    if (!syncSellingPriceFromDeal(product)) {
+    if (!syncDealPriceFromRate(product)) {
       pricingMessage = "Deal discount must be at least 0% and less than 100%.";
     }
     updateDealLinkedFields(product, key);

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import assert from "node:assert/strict";
-import { calculateSellingPriceFromDeal } from "../src/pricing.js";
+import { calculateDealPriceFromSelling, calculateSellingPriceFromDeal } from "../src/pricing.js";
 
 const requiredFiles = [
   "index.html",
@@ -77,7 +77,7 @@ const formulaChecks = [
   "const twoDecimalPricingFields = new Set([",
   "function formatTwoDecimalPricingInput(input)",
   ".toFixed(2)",
-  "1 - safeNumber(product.dealPriceRate)",
+  "calculateDealPriceFromSelling(",
   "calculateAmazonAmounts(dealPriceInr",
   "amazonProfitInr",
   "amazonDealProfitInr",
@@ -188,14 +188,17 @@ const formulaChecks = [
 assert.equal(calculateSellingPriceFromDeal(900, 0.1), 1000);
 assert.equal(calculateSellingPriceFromDeal(1699, 0.15), 1998.82);
 assert.equal(calculateSellingPriceFromDeal(900, 1), null);
+assert.equal(calculateDealPriceFromSelling(1000, 0.1), 900);
+assert.equal(calculateDealPriceFromSelling(1998.82, 0.15), 1699);
+assert.equal(calculateDealPriceFromSelling(1000, 1), null);
 
 const pageChecks = [
-  [indexSource, "src/app.js?v=20260714-delete-warning", "index app version"],
-  [indexSource, "src/styles.css?v=20260714-delete-warning", "index style version"],
-  [masterSource, "src/app.js?v=20260714-delete-warning", "master app version"],
-  [masterSource, "src/styles.css?v=20260714-delete-warning", "master style version"],
-  [nestedMasterSource, "../src/app.js?v=20260714-delete-warning", "nested master app version"],
-  [nestedMasterSource, "../src/styles.css?v=20260714-delete-warning", "nested master style version"],
+  [indexSource, "src/app.js?v=20260718-deal-price", "index app version"],
+  [indexSource, "src/styles.css?v=20260718-deal-price", "index style version"],
+  [masterSource, "src/app.js?v=20260718-deal-price", "master app version"],
+  [masterSource, "src/styles.css?v=20260718-deal-price", "master style version"],
+  [nestedMasterSource, "../src/app.js?v=20260718-deal-price", "nested master app version"],
+  [nestedMasterSource, "../src/styles.css?v=20260718-deal-price", "nested master style version"],
 ];
 
 for (const [source, expected, label] of pageChecks) {
