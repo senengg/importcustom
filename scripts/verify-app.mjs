@@ -116,6 +116,11 @@ const formulaChecks = [
   "shouldShowDashboardCard(label)",
   "data-action=\"discard-product\"",
   "[\"hsnCode\", \"HSN Code\", \"text\"]",
+  "[\"eanCode\", \"EAN Code\", \"text\"]",
+  "ean: \"eanCode\"",
+  "eanCode: new Map()",
+  "[\"sku\", \"asin\", \"eanCode\"]",
+  "EAN Code before upload",
   "[\"category\", \"Category\", \"category\"]",
   "defaultCommissionMaster",
   "renderCommissionMaster()",
@@ -193,12 +198,12 @@ assert.equal(calculateDealPriceFromSelling(1998.82, 0.15), 1699);
 assert.equal(calculateDealPriceFromSelling(1000, 1), null);
 
 const pageChecks = [
-  [indexSource, "src/app.js?v=20260718-deal-price", "index app version"],
-  [indexSource, "src/styles.css?v=20260718-deal-price", "index style version"],
-  [masterSource, "src/app.js?v=20260718-deal-price", "master app version"],
-  [masterSource, "src/styles.css?v=20260718-deal-price", "master style version"],
-  [nestedMasterSource, "../src/app.js?v=20260718-deal-price", "nested master app version"],
-  [nestedMasterSource, "../src/styles.css?v=20260718-deal-price", "nested master style version"],
+  [indexSource, "src/app.js?v=20260720-ean", "index app version"],
+  [indexSource, "src/styles.css?v=20260720-ean", "index style version"],
+  [masterSource, "src/app.js?v=20260720-ean", "master app version"],
+  [masterSource, "src/styles.css?v=20260720-ean", "master style version"],
+  [nestedMasterSource, "../src/app.js?v=20260720-ean", "nested master app version"],
+  [nestedMasterSource, "../src/styles.css?v=20260720-ean", "nested master style version"],
 ];
 
 for (const [source, expected, label] of pageChecks) {

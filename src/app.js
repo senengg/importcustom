@@ -49,6 +49,7 @@ const defaultProducts = [
     color: "",
     sku: "ABCD",
     asin: "1234ABC",
+    eanCode: "",
     hsnCode: "",
     procurementType: "Import",
     productCostUsd: 9.5,
@@ -76,6 +77,7 @@ const defaultProducts = [
     color: "",
     sku: "DDSF",
     asin: "4323DSFD",
+    eanCode: "",
     hsnCode: "",
     procurementType: "Import",
     productCostUsd: 4.5,
@@ -107,6 +109,7 @@ const fieldGroups = [
       ["color", "Color", "text"],
       ["sku", "SKU", "text"],
       ["asin", "ASIN", "text"],
+      ["eanCode", "EAN Code", "text"],
       ["hsnCode", "HSN Code", "text"],
       ["procurementType", "Procurement type", "select", ["Import", "India"]],
       ["productCostUsd", "Product cost / unit", "number", "USD"],
@@ -157,6 +160,7 @@ const productSearchFilters = [
   { value: "category", label: "Category" },
   { value: "sku", label: "SKU" },
   { value: "asin", label: "ASIN" },
+  { value: "eanCode", label: "EAN Code" },
   { value: "hsnCode", label: "HSN Code" },
   { value: "design", label: "Design" },
   { value: "color", label: "Color" },
@@ -174,6 +178,9 @@ const uploadHeaderAliases = {
   colour: "color",
   sku: "sku",
   asin: "asin",
+  ean: "eanCode",
+  eancode: "eanCode",
+  eanbarcode: "eanCode",
   hsn: "hsnCode",
   hsncode: "hsnCode",
   procurement: "procurementType",
@@ -699,6 +706,7 @@ function getVisibleDashboardCards() {
 
 function normalizeProduct(product) {
   const normalized = { ...product };
+  normalized.eanCode = String(normalized.eanCode ?? "").trim();
   normalized.procurementType = normalizeProcurementType(normalized.procurementType);
   normalized.productCostInr = safeNumber(normalized.productCostInr);
   applyIndiaProcurementDefaults(normalized);
@@ -751,6 +759,7 @@ function createNewProductDraft() {
     color: "",
     sku: "",
     asin: "",
+    eanCode: "",
     hsnCode: "",
     procurementType: "Import",
     productCostInr: 0,
@@ -865,7 +874,7 @@ function normalizeUniqueCode(value) {
 }
 
 function getProductIdentityLabel(product) {
-  return product.productName || product.sku || product.asin || "another product";
+  return product.productName || product.sku || product.asin || product.eanCode || "another product";
 }
 
 function getProductDisplayTitle(product) {
@@ -930,6 +939,7 @@ function findDuplicateProductCode(product, products = state.products, ignoredPro
   const checks = [
     ["sku", "SKU"],
     ["asin", "ASIN"],
+    ["eanCode", "EAN Code"],
   ];
 
   for (const [field, label] of checks) {
@@ -950,10 +960,11 @@ function validateUniqueProductCodes(products, existingProducts = state.products)
   const seen = {
     sku: new Map(),
     asin: new Map(),
+    eanCode: new Map(),
   };
 
   existingProducts.forEach((product) => {
-    ["sku", "asin"].forEach((field) => {
+    ["sku", "asin", "eanCode"].forEach((field) => {
       const code = normalizeUniqueCode(product[field]);
       if (code && !seen[field].has(code)) {
         seen[field].set(code, product);
@@ -962,7 +973,7 @@ function validateUniqueProductCodes(products, existingProducts = state.products)
   });
 
   for (const product of products) {
-    for (const [field, label] of [["sku", "SKU"], ["asin", "ASIN"]]) {
+    for (const [field, label] of [["sku", "SKU"], ["asin", "ASIN"], ["eanCode", "EAN Code"]]) {
       const code = normalizeUniqueCode(product[field]);
       if (!code) continue;
       const duplicateProduct = seen[field].get(code);
@@ -982,13 +993,15 @@ function findUploadProductMatch(product, products) {
       normalizeUniqueCode(item.sku) === normalizeUniqueCode(product.sku);
     const asinMatches = normalizeUniqueCode(product.asin) &&
       normalizeUniqueCode(item.asin) === normalizeUniqueCode(product.asin);
-    return skuMatches || asinMatches;
+    const eanMatches = normalizeUniqueCode(product.eanCode) &&
+      normalizeUniqueCode(item.eanCode) === normalizeUniqueCode(product.eanCode);
+    return skuMatches || asinMatches || eanMatches;
   });
   const uniqueMatches = [...new Map(matches.map((item) => [item.id, item])).values()];
 
   if (uniqueMatches.length > 1) {
     throw new Error(
-      `Excel row for ${getProductIdentityLabel(product)} matches more than one saved product. Check SKU and ASIN before upload.`,
+      `Excel row for ${getProductIdentityLabel(product)} matches more than one saved product. Check SKU, ASIN and EAN Code before upload.`,
     );
   }
 
@@ -1003,6 +1016,7 @@ function mergeUploadedProduct(existingProduct, uploadedProduct) {
     "color",
     "sku",
     "asin",
+    "eanCode",
     "hsnCode",
     "procurementType",
     "productCostUsd",
@@ -1795,7 +1809,7 @@ function renderProductRow(product) {
     <button class="product-row ${active} ${draft ? "draft" : ""}" data-select-product="${product.id}" data-product-row="${product.id}">
       <span>
         <strong>${escapeHtml(getProductDisplayTitle(product))}</strong>
-        <small>SKU: ${escapeHtml(product.sku || "-")} | ASIN: ${escapeHtml(product.asin || "-")} | HSN: ${escapeHtml(product.hsnCode || "-")}</small>
+        <small>SKU: ${escapeHtml(product.sku || "-")} | ASIN: ${escapeHtml(product.asin || "-")} | EAN: ${escapeHtml(product.eanCode || "-")} | HSN: ${escapeHtml(product.hsnCode || "-")}</small>
         <small>${draft ? (isNewProductDraft() ? "Draft, not saved" : "Unsaved changes") : `Category: ${escapeHtml(product.category || "-")}`}</small>
       </span>
       <b class="${tone}">${currency(calc.amazonDealProfitInr)}</b>
@@ -1810,7 +1824,7 @@ function renderProductSearch() {
         <input
           data-product-search
           type="search"
-          placeholder="Search product, category, color, SKU, ASIN, HSN"
+          placeholder="Search product, category, color, SKU, ASIN, EAN, HSN"
           value="${escapeAttribute(productSearchQuery)}"
           aria-label="Search products"
         />
@@ -2502,6 +2516,7 @@ function createProductFromUploadRow(row, columnMap) {
     color: uploadText(values.color),
     sku: uploadText(values.sku),
     asin: uploadText(values.asin),
+    eanCode: uploadText(values.eanCode),
     hsnCode: uploadText(values.hsnCode),
     procurementType,
     productCostUsd: procurementType === "India" ? 0 : uploadedProductCost,
@@ -2693,7 +2708,7 @@ function handleProductInput(event) {
   let pricingMessage = "";
 
   const percentFields = new Set(["tdsTcsRate"]);
-  const textFields = new Set(["productName", "category", "design", "color", "sku", "asin", "hsnCode", "procurementType", "countryOfOrigin", "cooBenefit"]);
+  const textFields = new Set(["productName", "category", "design", "color", "sku", "asin", "eanCode", "hsnCode", "procurementType", "countryOfOrigin", "cooBenefit"]);
 
   if (key === "dealPriceRate") {
     product.dealPriceRate = safeNumber(event.currentTarget.value) / 100;
@@ -2909,6 +2924,7 @@ function exportCsv() {
     "Color",
     "SKU",
     "ASIN",
+    "EAN Code",
     "HSN Code",
     "Procurement Type",
     "Product Cost Per Unit USD",
@@ -2960,6 +2976,7 @@ function exportCsv() {
       product.color,
       product.sku,
       product.asin,
+      product.eanCode,
       product.hsnCode,
       normalizeProcurementType(product.procurementType),
       product.productCostUsd,
