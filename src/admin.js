@@ -16,8 +16,14 @@ function escapeHtml(value) {
 function formatDate(value) {
   if (!value) return "Never";
   return new Intl.DateTimeFormat("en-IN", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+    timeZoneName: "short",
   }).format(new Date(value));
 }
 
@@ -65,7 +71,7 @@ function render() {
         </article>
 
         <article class="admin-panel">
-          <div class="section-title"><div><h2>Users</h2><p class="section-note">Everyone belongs to the same shared workspace.</p></div></div>
+          <div class="section-title"><div><h2>Users</h2><p class="section-note">Everyone belongs to the same shared workspace. Login times are shown in IST.</p></div></div>
           <div class="admin-table-wrap">
             <table class="admin-table"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last login</th></tr></thead><tbody>
               ${users.map((user) => `<tr><td><strong>${escapeHtml(user.full_name)}</strong><small>${escapeHtml(user.email)}</small></td><td>${escapeHtml(user.role)}</td><td>${user.active ? "Active" : "Disabled"}</td><td>${escapeHtml(formatDate(user.last_login_at))}</td></tr>`).join("") || `<tr><td colspan="4">No invited users yet.</td></tr>`}
@@ -75,7 +81,7 @@ function render() {
       </section>
 
       <section class="admin-panel activity-panel">
-        <div class="section-title"><div><h2>Activity log</h2><p class="section-note">Activity is retained for one month.</p></div><button class="ghost-button compact" data-refresh-logs>Refresh</button></div>
+        <div class="section-title"><div><h2>Activity log</h2><p class="section-note">Activity is retained for one month. Times are shown in IST.</p></div><button class="ghost-button compact" data-refresh-logs>Refresh</button></div>
         <div class="activity-list">
           ${logs.map((log) => `<article class="activity-item"><div><strong>${escapeHtml(log.summary)}</strong><small>${escapeHtml(log.user_email)} · ${escapeHtml(formatDate(log.created_at))}</small></div><span class="section-pill">${escapeHtml(log.action)}</span></article>`).join("") || `<p class="section-note">No activity recorded yet.</p>`}
         </div>

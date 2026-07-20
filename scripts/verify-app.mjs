@@ -46,6 +46,9 @@ const appSource = await fs.readFile(path.join("src", "app.js"), "utf8");
 const indexSource = await fs.readFile("index.html", "utf8");
 const masterSource = await fs.readFile("master.html", "utf8");
 const nestedMasterSource = await fs.readFile(path.join("master", "index.html"), "utf8");
+const adminPageSource = await fs.readFile("admin.html", "utf8");
+const adminAppSource = await fs.readFile(path.join("src", "admin.js"), "utf8");
+const usersApiSource = await fs.readFile(path.join("api", "users.js"), "utf8");
 const invoicePageSource = await fs.readFile("invoices.html", "utf8");
 const invoiceAppSource = await fs.readFile(path.join("src", "invoices.js"), "utf8");
 const formulaChecks = [
@@ -226,6 +229,15 @@ assert.equal(parsedInvoiceFixture.invoiceDate, "2026-06-19");
 assert.equal(parsedInvoiceFixture.totalQuantity, 5);
 assert.equal(parsedInvoiceFixture.lines.length, 2);
 
+const alternateInvoiceFixture = parseOrderInvoiceRows([
+  ["Invoice:", "TEST-DEVICE-LINE"],
+  [46192],
+  ["SKU", "Device", "Line", "Color", "PC", "PV US$", "US$"],
+  ["SKU-THREE", "Pixel 11", "Fusion", "Clear", 4, 6.5, 26],
+], "Invoice_TEST-DEVICE-LINE_260619.xlsx");
+assert.equal(alternateInvoiceFixture.lines[0].productName, "Pixel 11");
+assert.equal(alternateInvoiceFixture.lines[0].design, "Fusion");
+
 const invoiceWorkbook = createInvoiceWorkbook(
   {
     invoiceNumber: "TEST-001",
@@ -256,13 +268,36 @@ const pageChecks = [
   [masterSource, "src/styles.css?v=20260720-local-orders-5", "master style version"],
   [nestedMasterSource, "../src/app.js?v=20260720-local-orders-7", "nested master app version"],
   [nestedMasterSource, "../src/styles.css?v=20260720-local-orders-5", "nested master style version"],
-  [invoicePageSource, "src/invoices.js?v=20260720-local-orders-14", "invoice page app version"],
+  [invoicePageSource, "src/invoices.js?v=20260720-local-orders-15", "invoice page app version"],
   [invoicePageSource, "src/styles.css?v=20260720-local-orders-12", "invoice page style version"],
+  [adminPageSource, "src/admin.js?v=20260721-admin-ist", "admin app version"],
+  [adminPageSource, "src/styles.css?v=20260721-admin-ist", "admin style version"],
 ];
 
 for (const [source, expected, label] of pageChecks) {
   if (!source.includes(expected)) {
     throw new Error(`Page version check failed: ${label}`);
+  }
+}
+
+for (const expected of [
+  "Asia/Kolkata",
+  "timeZoneName: \"short\"",
+  "Login times are shown in IST.",
+]) {
+  if (!adminAppSource.includes(expected)) {
+    throw new Error(`Admin IST check failed: ${expected}`);
+  }
+}
+
+for (const expected of [
+  "/auth/v1/admin/users?per_page=1000",
+  "last_sign_in_at",
+  "latestLoginTimestamp",
+  "usersWithLatestLogin",
+]) {
+  if (!usersApiSource.includes(expected)) {
+    throw new Error(`Latest login check failed: ${expected}`);
   }
 }
 

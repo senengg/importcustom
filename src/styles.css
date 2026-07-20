@@ -190,7 +190,26 @@ h2 {
 
 .admin-table {
   width: 100%;
+  min-width: 680px;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.admin-table th:first-child,
+.admin-table td:first-child {
+  width: 38%;
+}
+
+.admin-table th:nth-child(2),
+.admin-table td:nth-child(2),
+.admin-table th:nth-child(3),
+.admin-table td:nth-child(3) {
+  width: 15%;
+}
+
+.admin-table th:last-child,
+.admin-table td:last-child {
+  width: 32%;
 }
 
 .admin-table th,
@@ -236,6 +255,12 @@ h2 {
 @media (max-width: 900px) {
   .admin-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .admin-table {
+    min-width: 620px;
   }
 }
 

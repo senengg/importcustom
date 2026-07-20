@@ -1,5 +1,14 @@
 import { insertAuditLog, readJsonBody, requireUser, sendJson, supabaseFetch } from "./_lib/supabase.js";
 
+function latestLoginTimestamp(profileTimestamp, authTimestamp) {
+  const timestamps = [profileTimestamp, authTimestamp]
+    .filter(Boolean)
+    .map((value) => ({ value, time: Date.parse(value) }))
+    .filter((item) => Number.isFinite(item.time))
+    .sort((a, b) => b.time - a.time);
+  return timestamps[0]?.value || null;
+}
+
 export default async function handler(request, response) {
   const session = await requireUser(request, response);
   if (!session) return;
@@ -15,7 +24,21 @@ export default async function handler(request, response) {
         `/rest/v1/profiles?workspace_id=eq.${encodeURIComponent(session.profile.workspace_id)}&select=id,email,full_name,role,active,last_login_at,created_at&order=full_name.asc`,
         { service: true },
       );
-      sendJson(response, 200, { users });
+      const authResult = await supabaseFetch(
+        session.configuration,
+        "/auth/v1/admin/users?per_page=1000",
+        { service: true },
+      ).catch(() => null);
+      const authUsers = Array.isArray(authResult) ? authResult : (authResult?.users || []);
+      const authUsersById = new Map(authUsers.map((user) => [user.id, user]));
+      const usersWithLatestLogin = users.map((user) => ({
+        ...user,
+        last_login_at: latestLoginTimestamp(
+          user.last_login_at,
+          authUsersById.get(user.id)?.last_sign_in_at,
+        ),
+      }));
+      sendJson(response, 200, { users: usersWithLatestLogin });
       return;
     }
 
