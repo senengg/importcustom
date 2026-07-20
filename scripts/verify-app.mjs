@@ -2,14 +2,21 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { calculateDealPriceFromSelling, calculateSellingPriceFromDeal } from "../src/pricing.js";
+import { parseOrderInvoiceRows } from "../src/invoice-orders.js";
+import { createInvoiceWorkbook } from "../src/xlsx-export.js";
 
 const requiredFiles = [
   "index.html",
   "master.html",
   "admin.html",
+  "invoices.html",
   "master/index.html",
   "src/app.js",
   "src/pricing.js",
+  "src/invoice-orders.js",
+  "src/invoices.js",
+  "src/xlsx-reader.js",
+  "src/xlsx-export.js",
   "src/styles.css",
   "api/rates.js",
   "api/state.js",
@@ -39,6 +46,8 @@ const appSource = await fs.readFile(path.join("src", "app.js"), "utf8");
 const indexSource = await fs.readFile("index.html", "utf8");
 const masterSource = await fs.readFile("master.html", "utf8");
 const nestedMasterSource = await fs.readFile(path.join("master", "index.html"), "utf8");
+const invoicePageSource = await fs.readFile("invoices.html", "utf8");
+const invoiceAppSource = await fs.readFile(path.join("src", "invoices.js"), "utf8");
 const formulaChecks = [
   "freightPerKgUsd) * weightKg",
   "safeNumber(settings.insuranceRate) / 100",
@@ -143,6 +152,13 @@ const formulaChecks = [
   "[\"bcdRate\", \"BCD rate\", \"number\", \"%\"]",
   "countryOfOrigin: getLatestCountryOfOrigin()",
   "data-product-upload",
+  "ORDER_HISTORY_STORAGE_KEY",
+  "custom-import-profit-order-history-v1",
+  "parseOrderInvoiceRows(rows, file.name)",
+  "Invoice ${parsedInvoice.invoiceNumber} was already uploaded",
+  "Saved only in this browser. Nothing in this section is uploaded to the cloud.",
+  "Lifetime ordered quantity",
+  "removeLocalInvoice",
   "data-product-list-scroll",
   "function restoreProductListScroll(productListScrollTop)",
   "restoreProductListScroll(productListScrollTop)",
@@ -197,13 +213,51 @@ assert.equal(calculateDealPriceFromSelling(1000, 0.1), 900);
 assert.equal(calculateDealPriceFromSelling(1998.82, 0.15), 1699);
 assert.equal(calculateDealPriceFromSelling(1000, 1), null);
 
+const invoiceFixture = [
+  ["Invoice:", "TEST-001"],
+  [46192],
+  ["SKU", "PRODUCT NAME", "DESIGN", "COLOR", "PC", "PV US$", "US$"],
+  ["SKU-ONE", "Case", "Fusion", "Black", 3, 4.5, 13.5],
+  ["SKU-TWO", "Case", "Alles", "Clear", 2, 5, 10],
+];
+const parsedInvoiceFixture = parseOrderInvoiceRows(invoiceFixture, "Invoice_TEST-001_260619.xlsx");
+assert.equal(parsedInvoiceFixture.invoiceNumber, "TEST-001");
+assert.equal(parsedInvoiceFixture.invoiceDate, "2026-06-19");
+assert.equal(parsedInvoiceFixture.totalQuantity, 5);
+assert.equal(parsedInvoiceFixture.lines.length, 2);
+
+const invoiceWorkbook = createInvoiceWorkbook(
+  {
+    invoiceNumber: "TEST-001",
+    lines: [{
+      sku: "SKU-ONE",
+      productName: "Case",
+      design: "Fusion",
+      color: "Black",
+      quantity: 3,
+      unitPriceUsd: 4.5,
+    }],
+  },
+  new Map([["sku-one", { asin: "ASIN-001" }]]),
+  (value) => String(value || "").toLowerCase(),
+);
+const invoiceWorkbookBytes = new Uint8Array(await invoiceWorkbook.arrayBuffer());
+assert.equal(invoiceWorkbookBytes[0], 0x50);
+assert.equal(invoiceWorkbookBytes[1], 0x4b);
+const invoiceWorkbookText = new TextDecoder().decode(invoiceWorkbookBytes);
+for (const expected of ["Product Name", "ASIN", "ASIN-001", "Price (USD)", "Total Price (USD)", "TOTAL INVOICE VALUE"]) {
+  assert.ok(invoiceWorkbookText.includes(expected), `Invoice workbook is missing ${expected}`);
+}
+
 const pageChecks = [
-  [indexSource, "src/app.js?v=20260720-ean", "index app version"],
-  [indexSource, "src/styles.css?v=20260720-ean", "index style version"],
-  [masterSource, "src/app.js?v=20260720-ean", "master app version"],
-  [masterSource, "src/styles.css?v=20260720-ean", "master style version"],
-  [nestedMasterSource, "../src/app.js?v=20260720-ean", "nested master app version"],
-  [nestedMasterSource, "../src/styles.css?v=20260720-ean", "nested master style version"],
+  [indexSource, "src/app.js?v=20260720-local-orders-7", "index app version"],
+  [indexSource, "src/styles.css?v=20260720-local-orders-5", "index style version"],
+  [masterSource, "src/app.js?v=20260720-local-orders-7", "master app version"],
+  [masterSource, "src/styles.css?v=20260720-local-orders-5", "master style version"],
+  [nestedMasterSource, "../src/app.js?v=20260720-local-orders-7", "nested master app version"],
+  [nestedMasterSource, "../src/styles.css?v=20260720-local-orders-5", "nested master style version"],
+  [invoicePageSource, "src/invoices.js?v=20260720-local-orders-14", "invoice page app version"],
+  [invoicePageSource, "src/styles.css?v=20260720-local-orders-12", "invoice page style version"],
 ];
 
 for (const [source, expected, label] of pageChecks) {
@@ -215,6 +269,44 @@ for (const [source, expected, label] of pageChecks) {
 for (const formula of formulaChecks) {
   if (!appSource.includes(formula)) {
     throw new Error(`Formula check failed: ${formula}`);
+  }
+}
+
+for (const expected of [
+  "Invoice Register",
+  "Total invoice amount",
+  "Payment bank",
+  "Payment date",
+  "Paid invoices amount",
+  "Pending invoices amount",
+  "data-invoice-selected",
+  "updatePendingSelection",
+  "selectedPendingAmount",
+  "Selected pending invoices",
+  "data-delete-invoice",
+  "deleteInvoice",
+  "quantities will also be removed",
+  "data-edit-invoice",
+  "data-save-invoice",
+  "saveInvoiceEdit",
+  "Invoice number and invoice date are required.",
+  "Enter a unique invoice number.",
+  "data-download-invoice",
+  "downloadInvoiceWorkbook",
+  "marked as paid and saved locally",
+  "hasCompletePaymentDetails",
+  "invoice-paid-badge",
+  "data-invoice-upload",
+  "handleInvoiceUpload",
+  "readXlsxRows(file)",
+  "was already uploaded and has not been counted again",
+  "paymentBank",
+  "paymentDate",
+  "custom-import-profit-order-history-v1",
+  "saved only in this browser",
+]) {
+  if (!invoicePageSource.includes(expected) && !invoiceAppSource.includes(expected)) {
+    throw new Error(`Invoice register check failed: ${expected}`);
   }
 }
 

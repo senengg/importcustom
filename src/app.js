@@ -1,6 +1,8 @@
 import { calculateDealPriceFromSelling, calculateSellingPriceFromDeal } from "./pricing.js";
+import { normalizeInvoiceIdentifier, parseOrderInvoiceRows } from "./invoice-orders.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
+const ORDER_HISTORY_STORAGE_KEY = "custom-import-profit-order-history-v1";
 
 const defaultDashboardCards = [
   "freight",
@@ -272,6 +274,9 @@ let productSearchQuery = "";
 let productFilterField = "all";
 let uploadStatus = "";
 let uploadStatusTone = "";
+let localOrderInvoices = loadLocalOrderInvoices();
+let invoiceUploadStatus = "";
+let invoiceUploadStatusTone = "";
 let selectedMasterCategoryId = state.commissionMaster[0]?.id ?? null;
 let masterDraft = null;
 let masterDraftMessage = "";
@@ -333,6 +338,27 @@ function loadState() {
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   scheduleCloudSave();
+}
+
+function loadLocalOrderInvoices() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(ORDER_HISTORY_STORAGE_KEY));
+    if (!Array.isArray(stored)) return [];
+    return stored.filter((invoice) =>
+      invoice &&
+      invoice.id &&
+      invoice.invoiceNumber &&
+      invoice.invoiceDate &&
+      Array.isArray(invoice.lines),
+    );
+  } catch {
+    localStorage.removeItem(ORDER_HISTORY_STORAGE_KEY);
+    return [];
+  }
+}
+
+function saveLocalOrderInvoices() {
+  localStorage.setItem(ORDER_HISTORY_STORAGE_KEY, JSON.stringify(localOrderInvoices));
 }
 
 function setSyncStatus(label, tone, title) {
@@ -1497,6 +1523,7 @@ function render() {
         </div>
         <div class="header-actions">
           ${renderSyncControl()}
+          <a class="nav-link" href="invoices.html">Invoices</a>
           <a class="nav-link" href="master/">Master Data</a>
           <label class="ghost-button file-button" title="Upload Excel">
             Upload Excel
@@ -1572,6 +1599,7 @@ function renderHeader(page) {
       <div class="header-actions">
         ${renderSyncControl()}
         <a class="nav-link" href="../index.html">Products</a>
+        <a class="nav-link" href="../invoices.html">Invoices</a>
         <a class="nav-link active" href="../master/">Master Data</a>
       </div>
     </header>
@@ -1848,6 +1876,76 @@ function renderProductSearch() {
   `;
 }
 
+function getProductOrderHistory(product) {
+  const sku = normalizeInvoiceIdentifier(product?.sku);
+  if (!sku) return [];
+
+  return localOrderInvoices
+    .map((invoice) => ({
+      ...invoice,
+      quantity: invoice.lines
+        .filter((line) => normalizeInvoiceIdentifier(line.sku) === sku)
+        .reduce((total, line) => total + safeNumber(line.quantity), 0),
+    }))
+    .filter((invoice) => invoice.quantity > 0)
+    .sort((a, b) =>
+      String(b.invoiceDate).localeCompare(String(a.invoiceDate)) ||
+      String(b.invoiceNumber).localeCompare(String(a.invoiceNumber)),
+    );
+}
+
+function formatOrderDate(value) {
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return String(value || "-");
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function formatOrderQuantity(value) {
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(safeNumber(value));
+}
+
+function renderOrderHistory(product) {
+  const history = getProductOrderHistory(product);
+  const totalQuantity = history.reduce((total, invoice) => total + invoice.quantity, 0);
+  return `
+    <section class="order-history-panel">
+      <div class="order-history-head">
+        <div>
+          <p class="eyebrow">Local order tracking</p>
+          <h3>Lifetime ordered quantity</h3>
+          <p>Saved only in this browser. Nothing in this section is uploaded to the cloud.</p>
+        </div>
+        <strong class="order-total">${formatOrderQuantity(totalQuantity)}</strong>
+      </div>
+      ${invoiceUploadStatus ? `<div class="upload-status ${invoiceUploadStatusTone}">${escapeHtml(invoiceUploadStatus)}</div>` : ""}
+      <div class="order-history-meta">${localOrderInvoices.length} invoice${localOrderInvoices.length === 1 ? "" : "s"} stored locally</div>
+      ${history.length ? `
+        <div class="order-history-table" role="table" aria-label="Product invoice history">
+          <div class="order-history-row order-history-labels" role="row">
+            <span>Order date</span>
+            <span>Invoice number</span>
+            <span>Quantity</span>
+            <span></span>
+          </div>
+          ${history.map((invoice) => `
+            <div class="order-history-row" role="row">
+              <span>${escapeHtml(formatOrderDate(invoice.invoiceDate))}</span>
+              <strong>${escapeHtml(invoice.invoiceNumber)}</strong>
+              <b>${formatOrderQuantity(invoice.quantity)}</b>
+              <button class="icon-button small danger" data-remove-invoice="${escapeAttribute(invoice.id)}" title="Remove this invoice from local history" aria-label="Remove invoice">Ã—</button>
+            </div>
+          `).join("")}
+        </div>
+      ` : `<div class="order-history-empty">No invoice quantity recorded for SKU ${escapeHtml(product.sku || "-")}.</div>`}
+    </section>
+  `;
+}
+
 function renderEditor(product, calc) {
   const draft = isDraftProduct(product);
   const hasChanges = hasProductDraftChanges(product);
@@ -1909,6 +2007,7 @@ function renderEditor(product, calc) {
       ${breakdownItem("ROI Amazon on product cost", percent(calc.roiProductCostAmazon), "roi-product-cost")}
       ${breakdownItem("ROI Amazon Deal on product cost", percent(calc.roiProductCostAmazonDeal), "roi-product-cost")}
     </div>
+    ${activeGroup === "Product" ? renderOrderHistory(product) : ""}
   `;
 }
 
@@ -2193,6 +2292,10 @@ function bindEvents() {
   const productUpload = document.querySelector("[data-product-upload]");
   productUpload?.addEventListener("change", handleBulkUpload);
 
+  document.querySelectorAll("[data-remove-invoice]").forEach((button) => {
+    button.addEventListener("click", () => removeLocalInvoice(button.dataset.removeInvoice));
+  });
+
   document.querySelectorAll("[data-select-product]").forEach((button) => {
     button.addEventListener("click", () => {
       const productListScrollTop = getProductListScrollTop();
@@ -2257,6 +2360,77 @@ function productMatchesSearch(product, query) {
       .toLowerCase()
       .includes(query),
   );
+}
+
+function getInvoiceMatchSummary(invoice) {
+  const savedSkus = new Set(
+    state.products
+      .map((product) => normalizeInvoiceIdentifier(product.sku))
+      .filter(Boolean),
+  );
+  const matchedLines = invoice.lines.filter((line) =>
+    savedSkus.has(normalizeInvoiceIdentifier(line.sku)),
+  );
+  const unmatchedLines = invoice.lines.filter((line) =>
+    !savedSkus.has(normalizeInvoiceIdentifier(line.sku)),
+  );
+  return {
+    matchedLines,
+    unmatchedLines,
+    matchedQuantity: matchedLines.reduce((total, line) => total + safeNumber(line.quantity), 0),
+  };
+}
+
+async function handleInvoiceUpload(event) {
+  const file = event.currentTarget.files?.[0];
+  event.currentTarget.value = "";
+  if (!file) return;
+
+  invoiceUploadStatus = `Reading ${file.name}`;
+  invoiceUploadStatusTone = "";
+  render();
+
+  try {
+    const rows = await readXlsxRows(file);
+    const parsedInvoice = parseOrderInvoiceRows(rows, file.name);
+    const invoiceKey = normalizeInvoiceIdentifier(parsedInvoice.invoiceNumber);
+    if (localOrderInvoices.some((invoice) =>
+      normalizeInvoiceIdentifier(invoice.invoiceNumber) === invoiceKey,
+    )) {
+      throw new Error(`Invoice ${parsedInvoice.invoiceNumber} was already uploaded and has not been counted again.`);
+    }
+
+    const invoice = {
+      ...parsedInvoice,
+      id: crypto.randomUUID(),
+      importedAt: new Date().toISOString(),
+    };
+    localOrderInvoices.push(invoice);
+    saveLocalOrderInvoices();
+
+    const match = getInvoiceMatchSummary(invoice);
+    invoiceUploadStatus = `Invoice ${invoice.invoiceNumber}: ${formatOrderQuantity(invoice.totalQuantity)} units read, ${formatOrderQuantity(match.matchedQuantity)} matched to saved products${match.unmatchedLines.length ? `, ${match.unmatchedLines.length} SKU row${match.unmatchedLines.length === 1 ? "" : "s"} unmatched` : ""}.`;
+    invoiceUploadStatusTone = match.unmatchedLines.length ? "warning" : "";
+    activeGroup = "Product";
+    render();
+  } catch (error) {
+    invoiceUploadStatus = error.message || "Could not read this invoice.";
+    invoiceUploadStatusTone = "error";
+    render();
+  }
+}
+
+function removeLocalInvoice(invoiceId) {
+  const invoice = localOrderInvoices.find((item) => item.id === invoiceId);
+  if (!invoice) return;
+  if (!window.confirm(`Remove invoice ${invoice.invoiceNumber} from local order history?\nThis removes its quantities from every product on this browser.`)) {
+    return;
+  }
+  localOrderInvoices = localOrderInvoices.filter((item) => item.id !== invoiceId);
+  saveLocalOrderInvoices();
+  invoiceUploadStatus = `Invoice ${invoice.invoiceNumber} removed from local order history.`;
+  invoiceUploadStatusTone = "";
+  render();
 }
 
 async function handleBulkUpload(event) {
