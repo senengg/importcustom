@@ -22,6 +22,7 @@ const requiredFiles = [
   "src/invoice-orders.js",
   "src/invoices.js",
   "src/products.js",
+  "src/product-filters.js",
   "src/product-upload.js",
   "src/xlsx-reader.js",
   "src/xlsx-export.js",
@@ -344,6 +345,15 @@ for (const expected of [
   "importProductRows(rows, stateDocument)",
   "downloadProductWorkbook(visibleProducts",
   "updated from Excel",
+  "renderSearchableDropdown",
+  "bindSearchableDropdowns",
+  "matchesFilterValue",
+  "Search categories",
+  "Search countries",
+  "Search COO benefits",
+  "Search designs",
+  "Search colors",
+  "Search sorting options",
 ]) {
   if (!productsAppSource.includes(expected)) {
     throw new Error(`Product catalogue upload check failed: ${expected}`);

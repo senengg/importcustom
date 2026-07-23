@@ -6,6 +6,11 @@ import {
   renderWorkspaceConnectionStatus,
   startWorkspaceConnectionMonitor,
 } from "./connection-status.js";
+import {
+  getUniqueFilterOptions,
+  matchesFilterValue,
+  normalizeFilterValue,
+} from "./product-filters.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
 const ORDER_HISTORY_STORAGE_KEY = "custom-import-profit-order-history-v1";
@@ -38,6 +43,20 @@ let filters = {
   color: "",
   sort: "alphabetical",
 };
+
+const sortOptions = [
+  { value: "alphabetical", label: "Alphabetical A-Z" },
+  { value: "sellingPriceLow", label: "Selling price: low to high" },
+  { value: "sellingPriceHigh", label: "Selling price: high to low" },
+  { value: "dealPriceLow", label: "Deal price: low to high" },
+  { value: "dealPriceHigh", label: "Deal price: high to low" },
+  { value: "amazonProfitLow", label: "Amazon profit: low to high" },
+  { value: "amazonProfitHigh", label: "Amazon profit: high to low" },
+  { value: "amazonDealProfitLow", label: "Amazon deal profit: low to high" },
+  { value: "amazonDealProfitHigh", label: "Amazon deal profit: high to low" },
+  { value: "lifetimeQuantityLow", label: "Lifetime ordered quantity: low to high" },
+  { value: "lifetimeQuantityHigh", label: "Lifetime ordered quantity: high to low" },
+];
 
 function safeNumber(value) {
   const number = Number(value);
@@ -209,20 +228,69 @@ async function request(path, options = {}) {
   return data;
 }
 
-function uniqueValues(field) {
-  return [...new Set(
-    products
-      .map((product) => String(product[field] || "").trim())
-      .filter(Boolean),
-  )].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+function getFilterOptions(field) {
+  return field === "sort" ? sortOptions : getUniqueFilterOptions(products, field);
 }
 
-function filterOptions(field, allLabel) {
+function renderSearchableDropdown(field, label, allLabel, searchPlaceholder) {
+  const options = getFilterOptions(field);
+  const selectedValue = filters[field];
+  const selectedLabel = selectedValue
+    ? options.find((option) => option.value === selectedValue)?.label || allLabel
+    : allLabel;
   return `
-    <option value="">${allLabel}</option>
-    ${uniqueValues(field)
-      .map((value) => `<option value="${escapeAttribute(value)}">${escapeHtml(value)}</option>`)
-      .join("")}
+    <div class="form-field catalog-dropdown-field">
+      <span>${escapeHtml(label)}</span>
+      <div
+        class="searchable-select"
+        data-searchable-select="${escapeAttribute(field)}"
+        data-all-label="${escapeAttribute(allLabel)}"
+      >
+        <button
+          class="searchable-select-trigger"
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded="false"
+          data-searchable-trigger
+        >
+          <span data-searchable-selected>${escapeHtml(selectedLabel)}</span>
+          <span class="searchable-select-arrow" aria-hidden="true">⌄</span>
+        </button>
+        <div class="searchable-select-menu" data-searchable-menu hidden>
+          <input
+            class="searchable-select-search"
+            type="search"
+            placeholder="${escapeAttribute(searchPlaceholder)}"
+            aria-label="${escapeAttribute(searchPlaceholder)}"
+            autocomplete="off"
+            data-searchable-search
+          />
+          <div class="searchable-select-options" role="listbox">
+            ${field === "sort" ? "" : `
+              <button
+                class="searchable-select-option ${selectedValue ? "" : "selected"}"
+                type="button"
+                role="option"
+                aria-selected="${selectedValue ? "false" : "true"}"
+                data-searchable-option
+                data-value=""
+              >${escapeHtml(allLabel)}</button>
+            `}
+            ${options.map((option) => `
+              <button
+                class="searchable-select-option ${option.value === selectedValue ? "selected" : ""}"
+                type="button"
+                role="option"
+                aria-selected="${option.value === selectedValue ? "true" : "false"}"
+                data-searchable-option
+                data-value="${escapeAttribute(option.value)}"
+              >${escapeHtml(option.label)}</button>
+            `).join("")}
+            <p class="searchable-select-empty" data-searchable-empty hidden>No matching options.</p>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -330,11 +398,11 @@ function getVisibleProducts() {
     if (search && !searchableFields.some((field) =>
       String(product[field] || "").toLowerCase().includes(search),
     )) return false;
-    if (filters.category && product.category !== filters.category) return false;
-    if (filters.countryOfOrigin && product.countryOfOrigin !== filters.countryOfOrigin) return false;
-    if (filters.cooBenefit && product.cooBenefit !== filters.cooBenefit) return false;
-    if (filters.design && product.design !== filters.design) return false;
-    if (filters.color && product.color !== filters.color) return false;
+    if (!matchesFilterValue(product.category, filters.category)) return false;
+    if (!matchesFilterValue(product.countryOfOrigin, filters.countryOfOrigin)) return false;
+    if (!matchesFilterValue(product.cooBenefit, filters.cooBenefit)) return false;
+    if (!matchesFilterValue(product.design, filters.design)) return false;
+    if (!matchesFilterValue(product.color, filters.color)) return false;
     return true;
   });
 
@@ -423,6 +491,24 @@ function resetFilters() {
   document.querySelectorAll("[data-catalog-filter]").forEach((control) => {
     control.value = filters[control.dataset.catalogFilter];
   });
+  document.querySelectorAll("[data-searchable-select]").forEach((dropdown) => {
+    const field = dropdown.dataset.searchableSelect;
+    const options = getFilterOptions(field);
+    const selectedValue = filters[field];
+    const selectedLabel = selectedValue
+      ? options.find((option) => option.value === selectedValue)?.label || ""
+      : dropdown.dataset.allLabel;
+    const selected = dropdown.querySelector("[data-searchable-selected]");
+    if (selected) selected.textContent = selectedLabel;
+    dropdown.querySelectorAll("[data-searchable-option]").forEach((option) => {
+      const isSelected = option.dataset.value === selectedValue;
+      option.classList.toggle("selected", isSelected);
+      option.setAttribute("aria-selected", String(isSelected));
+      option.hidden = false;
+    });
+    const search = dropdown.querySelector("[data-searchable-search]");
+    if (search) search.value = "";
+  });
   renderResults();
 }
 
@@ -486,6 +572,76 @@ function handleCatalogDownload() {
   );
 }
 
+function closeSearchableDropdowns(except = null) {
+  document.querySelectorAll("[data-searchable-select]").forEach((dropdown) => {
+    if (dropdown === except) return;
+    const menu = dropdown.querySelector("[data-searchable-menu]");
+    const trigger = dropdown.querySelector("[data-searchable-trigger]");
+    const search = dropdown.querySelector("[data-searchable-search]");
+    if (menu) menu.hidden = true;
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+    if (search) search.value = "";
+    dropdown.querySelectorAll("[data-searchable-option]").forEach((option) => {
+      option.hidden = false;
+    });
+    const empty = dropdown.querySelector("[data-searchable-empty]");
+    if (empty) empty.hidden = true;
+  });
+}
+
+function filterSearchableOptions(dropdown, query) {
+  const normalizedQuery = normalizeFilterValue(query);
+  let visibleCount = 0;
+  dropdown.querySelectorAll("[data-searchable-option]").forEach((option) => {
+    const matches = !normalizedQuery ||
+      normalizeFilterValue(option.textContent).includes(normalizedQuery);
+    option.hidden = !matches;
+    if (matches) visibleCount += 1;
+  });
+  const empty = dropdown.querySelector("[data-searchable-empty]");
+  if (empty) empty.hidden = visibleCount > 0;
+}
+
+function bindSearchableDropdowns() {
+  document.querySelectorAll("[data-searchable-select]").forEach((dropdown) => {
+    const trigger = dropdown.querySelector("[data-searchable-trigger]");
+    const menu = dropdown.querySelector("[data-searchable-menu]");
+    const search = dropdown.querySelector("[data-searchable-search]");
+    trigger?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const opening = menu.hidden;
+      closeSearchableDropdowns(opening ? dropdown : null);
+      menu.hidden = !opening;
+      trigger.setAttribute("aria-expanded", String(opening));
+      if (opening) search?.focus();
+    });
+    menu?.addEventListener("click", (event) => event.stopPropagation());
+    search?.addEventListener("input", () => filterSearchableOptions(dropdown, search.value));
+    search?.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeSearchableDropdowns();
+        trigger?.focus();
+      }
+    });
+    dropdown.querySelectorAll("[data-searchable-option]").forEach((option) => {
+      option.addEventListener("click", () => {
+        const field = dropdown.dataset.searchableSelect;
+        filters[field] = option.dataset.value;
+        const selected = dropdown.querySelector("[data-searchable-selected]");
+        if (selected) selected.textContent = option.textContent.trim();
+        dropdown.querySelectorAll("[data-searchable-option]").forEach((candidate) => {
+          const isSelected = candidate === option;
+          candidate.classList.toggle("selected", isSelected);
+          candidate.setAttribute("aria-selected", String(isSelected));
+        });
+        closeSearchableDropdowns();
+        trigger?.focus();
+        renderResults();
+      });
+    });
+  });
+}
+
 function bindEvents() {
   document.querySelectorAll("[data-catalog-filter]").forEach((control) => {
     const eventName = control.tagName === "INPUT" ? "input" : "change";
@@ -494,6 +650,7 @@ function bindEvents() {
       renderResults();
     });
   });
+  bindSearchableDropdowns();
   document.querySelector("[data-catalog-reset]")?.addEventListener("click", resetFilters);
   document.querySelector("[data-catalog-upload]")?.addEventListener("change", handleCatalogUpload);
   document.querySelector("[data-catalog-download]")?.addEventListener("click", handleCatalogDownload);
@@ -541,44 +698,12 @@ function render() {
               <input data-catalog-filter="search" type="search" placeholder="Product, SKU, ASIN, category, design…" />
             </div>
           </label>
-          <label class="form-field">
-            <span>Category</span>
-            <div class="input-shell"><select data-catalog-filter="category">${filterOptions("category", "All categories")}</select></div>
-          </label>
-          <label class="form-field">
-            <span>Country</span>
-            <div class="input-shell"><select data-catalog-filter="countryOfOrigin">${filterOptions("countryOfOrigin", "All countries")}</select></div>
-          </label>
-          <label class="form-field">
-            <span>COO benefit</span>
-            <div class="input-shell"><select data-catalog-filter="cooBenefit">${filterOptions("cooBenefit", "All COO benefits")}</select></div>
-          </label>
-          <label class="form-field">
-            <span>Design</span>
-            <div class="input-shell"><select data-catalog-filter="design">${filterOptions("design", "All designs")}</select></div>
-          </label>
-          <label class="form-field">
-            <span>Color</span>
-            <div class="input-shell"><select data-catalog-filter="color">${filterOptions("color", "All colors")}</select></div>
-          </label>
-          <label class="form-field">
-            <span>Sort by</span>
-            <div class="input-shell">
-              <select data-catalog-filter="sort">
-                <option value="alphabetical">Alphabetical A-Z</option>
-                <option value="sellingPriceLow">Selling price: low to high</option>
-                <option value="sellingPriceHigh">Selling price: high to low</option>
-                <option value="dealPriceLow">Deal price: low to high</option>
-                <option value="dealPriceHigh">Deal price: high to low</option>
-                <option value="amazonProfitLow">Amazon profit: low to high</option>
-                <option value="amazonProfitHigh">Amazon profit: high to low</option>
-                <option value="amazonDealProfitLow">Amazon deal profit: low to high</option>
-                <option value="amazonDealProfitHigh">Amazon deal profit: high to low</option>
-                <option value="lifetimeQuantityLow">Lifetime ordered quantity: low to high</option>
-                <option value="lifetimeQuantityHigh">Lifetime ordered quantity: high to low</option>
-              </select>
-            </div>
-          </label>
+          ${renderSearchableDropdown("category", "Category", "All categories", "Search categories")}
+          ${renderSearchableDropdown("countryOfOrigin", "Country", "All countries", "Search countries")}
+          ${renderSearchableDropdown("cooBenefit", "COO benefit", "All COO benefits", "Search COO benefits")}
+          ${renderSearchableDropdown("design", "Design", "All designs", "Search designs")}
+          ${renderSearchableDropdown("color", "Color", "All colors", "Search colors")}
+          ${renderSearchableDropdown("sort", "Sort by", "", "Search sorting options")}
         </div>
       </section>
 
@@ -639,3 +764,4 @@ app.innerHTML = `
 `;
 initialize();
 startWorkspaceConnectionMonitor();
+document.addEventListener("click", () => closeSearchableDropdowns());
