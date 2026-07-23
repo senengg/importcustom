@@ -244,7 +244,7 @@ function renderSidebar() {
           <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
           <small>${escapeHtml(currentUser?.role || "")}</small>
         </span>
-        <button class="ghost-button compact" data-catalog-logout type="button">Logout</button>
+        <button class="ghost-button compact sidebar-logout" data-catalog-logout type="button">Logout</button>
       </nav>
     </header>
   `;

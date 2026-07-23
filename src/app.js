@@ -1584,14 +1584,14 @@ function render() {
             <strong class="sidebar-title">Workspace</strong>
           </div>
         </div>
-        <div class="header-actions">
+        <nav class="header-actions" aria-label="Workspace navigation">
           <span class="sidebar-section-label">Workspace</span>
           <a class="nav-link active" href="index.html">Calculator</a>
           <a class="nav-link" href="products.html">All Products</a>
           <a class="nav-link" href="invoices.html">Invoices</a>
           <a class="nav-link" href="master/index.html">Master Data</a>
           ${renderSyncControl()}
-        </div>
+        </nav>
       </header>
 
       <section class="settings-band">
@@ -1650,14 +1650,14 @@ function renderHeader(page) {
           <strong class="sidebar-title">Workspace</strong>
         </div>
       </div>
-      <div class="header-actions">
+      <nav class="header-actions" aria-label="Workspace navigation">
         <span class="sidebar-section-label">Workspace</span>
         <a class="nav-link" href="../index.html">Calculator</a>
         <a class="nav-link" href="../products.html">All Products</a>
         <a class="nav-link" href="../invoices.html">Invoices</a>
         <a class="nav-link active" href="../master/index.html">Master Data</a>
         ${renderSyncControl()}
-      </div>
+      </nav>
     </header>
     <section class="page-topbar">
       <div>
@@ -1671,10 +1671,10 @@ function renderHeader(page) {
 
 function renderSyncControl() {
   return `
-    <span class="sidebar-section-label account-section-label">Account</span>
     ${currentUser?.role === "admin" ? `<a class="nav-link" href="/admin">Users & Logs</a>` : ""}
+    <span class="sidebar-section-label account-section-label">Account</span>
     <button
-      class="sync-control ${syncStatusTone}"
+      class="sync-control sidebar-sync-control ${syncStatusTone}"
       data-action="sync"
       data-sync-control
       type="button"
@@ -1687,7 +1687,7 @@ function renderSyncControl() {
       <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
       <small>${escapeHtml(currentUser?.role || "")}</small>
     </span>
-    <button class="ghost-button compact" data-action="logout" type="button">Logout</button>
+    <button class="ghost-button compact sidebar-logout" data-action="logout" type="button">Logout</button>
   `;
 }
 

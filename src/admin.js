@@ -66,7 +66,7 @@ function render() {
           <img class="brand-mark" src="/import-profit-mark.png" alt="" />
           <div><p class="eyebrow">Import and Profit</p><strong class="sidebar-title">Workspace</strong></div>
         </div>
-        <div class="header-actions">
+        <nav class="header-actions" aria-label="Workspace navigation">
           <span class="sidebar-section-label">Workspace</span>
           <a class="nav-link" href="/">Calculator</a>
           <a class="nav-link" href="/products.html">All Products</a>
@@ -75,7 +75,8 @@ function render() {
           <a class="nav-link active" href="/admin">Users & Logs</a>
           <span class="sidebar-section-label account-section-label">Account</span>
           <span class="account-chip"><strong>${escapeHtml(currentUser.full_name)}</strong><small>${escapeHtml(currentUser.role)}</small></span>
-        </div>
+          <button class="ghost-button compact sidebar-logout" data-admin-logout type="button">Logout</button>
+        </nav>
       </header>
 
       <section class="page-topbar">
@@ -121,6 +122,12 @@ function render() {
   document.querySelector("[data-invite-form]")?.addEventListener("submit", inviteUser);
   document.querySelector("[data-refresh-logs]")?.addEventListener("click", loadData);
   document.querySelector("[data-restore-workspace]")?.addEventListener("click", restoreWorkspace);
+  document.querySelector("[data-admin-logout]")?.addEventListener("click", logout);
+}
+
+async function logout() {
+  await request("/api/auth/logout", { method: "POST" }).catch(() => null);
+  window.location.replace("/");
 }
 
 function renderRecoveryPanel() {

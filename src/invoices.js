@@ -6,6 +6,7 @@ const ORDER_HISTORY_STORAGE_KEY = "custom-import-profit-order-history-v1";
 const PRODUCT_STATE_STORAGE_KEY = "custom-import-profit-state-v1";
 
 const app = document.querySelector("#invoice-app");
+let currentUser = null;
 let invoices = loadInvoices();
 let uploadStatus = "";
 let uploadStatusTone = "";
@@ -54,6 +55,18 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+async function request(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "The request failed.");
+  return data;
 }
 
 function formatDate(value) {
@@ -180,13 +193,29 @@ function render() {
             <strong class="sidebar-title">Workspace</strong>
           </div>
         </div>
-        <div class="header-actions">
+        <nav class="header-actions" aria-label="Workspace navigation">
           <span class="sidebar-section-label">Workspace</span>
           <a class="nav-link" href="index.html">Calculator</a>
           <a class="nav-link" href="products.html">All Products</a>
           <a class="nav-link active" href="invoices.html">Invoices</a>
           <a class="nav-link" href="master/index.html">Master Data</a>
-          <span class="sidebar-section-label">Actions</span>
+          ${currentUser?.role === "admin" ? `<a class="nav-link" href="/admin">Users & Logs</a>` : ""}
+          <span class="sidebar-section-label account-section-label">Account</span>
+          <span class="account-chip" title="${escapeHtml(currentUser?.email || "")}">
+            <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
+            <small>${escapeHtml(currentUser?.role || "")}</small>
+          </span>
+          <button class="ghost-button compact sidebar-logout" data-invoice-logout type="button">Logout</button>
+        </nav>
+      </header>
+
+      <section class="page-topbar">
+        <div>
+          <p class="page-kicker">Workspace / Invoices</p>
+          <h1>Invoice Register</h1>
+        </div>
+        <div class="page-topbar-actions">
+          <span class="page-status-pill">${sortedInvoices.length} invoice${sortedInvoices.length === 1 ? "" : "s"}</span>
           <label class="primary-button file-button" title="Upload order invoice locally">
             Upload Invoice
             <input
@@ -196,14 +225,6 @@ function render() {
             />
           </label>
         </div>
-      </header>
-
-      <section class="page-topbar">
-        <div>
-          <p class="page-kicker">Workspace / Invoices</p>
-          <h1>Invoice Register</h1>
-        </div>
-        <span class="page-status-pill">${sortedInvoices.length} invoice${sortedInvoices.length === 1 ? "" : "s"}</span>
       </section>
 
       <section class="invoice-summary-grid">
@@ -287,6 +308,12 @@ function render() {
   document.querySelector("[data-cancel-invoice]")?.addEventListener("click", cancelInvoiceEdit);
   document.querySelector("[data-edit-invoice-number]")?.addEventListener("input", updateInvoiceEditDraft);
   document.querySelector("[data-edit-invoice-date]")?.addEventListener("input", updateInvoiceEditDraft);
+  document.querySelector("[data-invoice-logout]")?.addEventListener("click", logout);
+}
+
+async function logout() {
+  await request("/api/auth/logout", { method: "POST" }).catch(() => null);
+  window.location.replace("/");
 }
 
 function downloadInvoice(event) {
@@ -463,4 +490,28 @@ window.addEventListener("storage", () => {
   render();
 });
 
-render();
+async function initialize() {
+  try {
+    const session = await request("/api/auth/session");
+    currentUser = session.user;
+    render();
+  } catch {
+    window.location.replace("/");
+  }
+}
+
+app.innerHTML = `
+  <main class="login-page loading-page">
+    <section class="branded-loader" role="status" aria-live="polite">
+      <div class="loader-orbit" aria-hidden="true">
+        <img class="loader-mark" src="import-profit-mark.png" alt="" />
+      </div>
+      <p class="eyebrow">Import and Profit App</p>
+      <h1>Preparing your invoices</h1>
+      <div class="loader-progress" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </section>
+  </main>
+`;
+initialize();
