@@ -358,6 +358,8 @@ for (const expected of [
   "deleteSelectedProducts",
   "getBulkDeleteWarning",
   "removeSelectedProducts",
+  "filters.search = \"\";",
+  "value=\"${escapeAttribute(filters.search)}\"",
 ]) {
   if (!productsAppSource.includes(expected)) {
     throw new Error(`Product catalogue upload check failed: ${expected}`);

@@ -590,6 +590,7 @@ async function deleteSelectedProducts() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
     const deletedCount = selectedProducts.length;
     selectedProductIds.clear();
+    filters.search = "";
     uploadStatus = `${deletedCount} product${deletedCount === 1 ? "" : "s"} deleted from the shared workspace.`;
     uploadStatusTone = "";
     bulkDeletePending = false;
@@ -835,7 +836,12 @@ function render() {
           <label class="form-field catalog-search">
             <span>Search all fields</span>
             <div class="input-shell">
-              <input data-catalog-filter="search" type="search" placeholder="Product, SKU, ASIN, category, design…" />
+              <input
+                data-catalog-filter="search"
+                type="search"
+                value="${escapeAttribute(filters.search)}"
+                placeholder="Product, SKU, ASIN, category, design…"
+              />
             </div>
           </label>
           ${renderSearchableDropdown("category", "Category", "All categories", "Search categories")}
