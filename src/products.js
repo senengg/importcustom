@@ -343,16 +343,14 @@ function renderProductCard(product) {
       class="catalog-card catalog-list-item ${selected ? "selected" : ""}"
       data-catalog-product-card="${escapeAttribute(product.id)}"
     >
-      ${canManageProducts() ? `
-        <label class="catalog-product-selector" title="Select ${escapeAttribute(getProductTitle(product))}">
-          <input
-            type="checkbox"
-            data-catalog-product-select="${escapeAttribute(product.id)}"
-            ${selected ? "checked" : ""}
-          />
-          <span class="sr-only">Select ${escapeHtml(getProductTitle(product))}</span>
-        </label>
-      ` : ""}
+      <label class="catalog-product-selector" title="Select ${escapeAttribute(getProductTitle(product))}">
+        <input
+          type="checkbox"
+          data-catalog-product-select="${escapeAttribute(product.id)}"
+          ${selected ? "checked" : ""}
+        />
+        <span class="sr-only">Select ${escapeHtml(getProductTitle(product))}</span>
+      </label>
       <div class="catalog-list-identity">
         <div class="catalog-card-head">
           <div>
@@ -539,6 +537,17 @@ function updateBulkSelectionControls(visibleProducts = getVisibleProducts()) {
       ? "Delete the selected products"
       : "Connect to the shared workspace before deleting products";
   }
+
+  const downloadButton = document.querySelector("[data-catalog-download]");
+  if (downloadButton) {
+    downloadButton.disabled = selectedProductIds.size === 0;
+    downloadButton.textContent = selectedProductIds.size
+      ? `Download Excel (${selectedProductIds.size})`
+      : "Download Excel";
+    downloadButton.title = selectedProductIds.size
+      ? "Download only the selected products"
+      : "Select one or more products to download";
+  }
 }
 
 function bindProductSelectionEvents() {
@@ -678,12 +687,12 @@ async function handleCatalogUpload(event) {
 }
 
 function handleCatalogDownload() {
-  const visibleProducts = getVisibleProducts();
-  if (!visibleProducts.length) {
-    setUploadStatus("No filtered products are available to download.", "error");
+  const selectedProducts = getSelectedProducts(products, selectedProductIds);
+  if (!selectedProducts.length) {
+    setUploadStatus("Select one or more products to download.", "error");
     return;
   }
-  downloadProductWorkbook(visibleProducts, (product) => {
+  downloadProductWorkbook(selectedProducts, (product) => {
     const metrics = calculateProductMetrics(product);
     return {
       ...metrics,
@@ -692,7 +701,7 @@ function handleCatalogDownload() {
     };
   });
   setUploadStatus(
-    `${visibleProducts.length} filtered product${visibleProducts.length === 1 ? "" : "s"} downloaded.`,
+    `${selectedProducts.length} selected product${selectedProducts.length === 1 ? "" : "s"} downloaded.`,
   );
 }
 
@@ -806,10 +815,10 @@ function render() {
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               />
             </label>
-            <button class="ghost-button compact" data-catalog-download type="button">
+            <button class="ghost-button compact" data-catalog-download type="button" disabled>
               Download Excel
             </button>
-            <a class="primary-button catalog-add" href="index.html">+ Product</a>
+            <a class="primary-button catalog-add" href="index.html?new=1">+ Product</a>
           </div>
         </div>
         <div
@@ -817,21 +826,21 @@ function render() {
           data-catalog-upload-status
           ${uploadStatus ? "" : "hidden"}
         >${escapeHtml(uploadStatus)}</div>
-        ${canManageProducts() ? `
-          <div class="catalog-bulk-actions">
-            <label class="catalog-select-all">
-              <input data-catalog-select-all type="checkbox" />
-              <span>Select all filtered products</span>
-            </label>
-            <span class="catalog-selected-count" data-catalog-selected-count>0 selected</span>
+        <div class="catalog-bulk-actions">
+          <label class="catalog-select-all">
+            <input data-catalog-select-all type="checkbox" />
+            <span>Select all filtered products</span>
+          </label>
+          <span class="catalog-selected-count" data-catalog-selected-count>0 selected</span>
+          ${canManageProducts() ? `
             <button
               class="bulk-delete-button"
               data-catalog-delete-selected
               type="button"
               disabled
             >Delete selected</button>
-          </div>
-        ` : ""}
+          ` : ""}
+        </div>
         <div class="catalog-filters">
           <label class="form-field catalog-search">
             <span>Search all fields</span>

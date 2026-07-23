@@ -276,13 +276,17 @@ const dashboardCardDefinitions = [
   },
 ];
 
-const requestedProductId = new URLSearchParams(window.location.search).get("product");
+const initialRequestParams = new URLSearchParams(window.location.search);
+const requestedProductId = initialRequestParams.get("product");
+const requestedNewProduct = initialRequestParams.get("new") === "1";
 let state = loadState();
 localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 let calculatorFreightPerKgUsd = safeNumber(state.settings.freightPerKgUsd);
-let selectedProductId = state.products.some((product) => product.id === requestedProductId)
-  ? requestedProductId
-  : (state.products[0]?.id ?? null);
+let selectedProductId = requestedNewProduct
+  ? null
+  : (state.products.some((product) => product.id === requestedProductId)
+    ? requestedProductId
+    : (state.products[0]?.id ?? null));
 let activeGroup = "Product";
 let exchangeStatus = "";
 let productSearchQuery = "";
@@ -298,6 +302,7 @@ let masterDraftMessage = "";
 let productDraft = null;
 let productDraftMode = "";
 let productDraftOriginalId = null;
+let pendingNewProductRequest = requestedNewProduct;
 let productSaveMessage = "";
 let commissionPreview = null;
 let currentUser = null;
@@ -470,16 +475,19 @@ function scheduleCloudSave() {
 }
 
 function applyCloudState(cloudState) {
+  const newProductDraft = isNewProductDraft() ? productDraft : null;
   state = cloudState;
   calculatorFreightPerKgUsd = safeNumber(state.settings.freightPerKgUsd);
-  selectedProductId = state.products.some((product) => product.id === requestedProductId)
-    ? requestedProductId
-    : (state.products.some((product) => product.id === selectedProductId)
-      ? selectedProductId
-      : (state.products[0]?.id ?? null));
+  selectedProductId = newProductDraft
+    ? newProductDraft.id
+    : (state.products.some((product) => product.id === requestedProductId)
+      ? requestedProductId
+      : (state.products.some((product) => product.id === selectedProductId)
+        ? selectedProductId
+        : (state.products[0]?.id ?? null)));
   selectedMasterCategoryId = state.commissionMaster[0]?.id ?? null;
   masterDraft = null;
-  resetProductDraft();
+  if (!newProductDraft) resetProductDraft();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   render();
 }
@@ -593,6 +601,7 @@ async function initializeAuth() {
       ? "Multi-user login needs Supabase configuration in Vercel."
       : "";
   }
+  if (currentUser) openRequestedNewProductDraft();
   authReady = true;
   render();
   if (currentUser) await initializeAuthenticatedCloudSync();
@@ -612,6 +621,7 @@ async function handleLogin(event) {
     });
     currentUser = result.user;
     authMessage = "";
+    openRequestedNewProductDraft();
     render();
     await initializeAuthenticatedCloudSync();
   } catch (error) {
@@ -793,10 +803,9 @@ function normalizeProduct(product) {
 
 function createNewProductDraft() {
   const draft = normalizeProduct({
-    ...defaultProducts[0],
     id: crypto.randomUUID(),
-    productName: "New Product",
-    category: getLatestMasterCategory(),
+    productName: "",
+    category: "",
     design: "",
     color: "",
     sku: "",
@@ -804,12 +813,41 @@ function createNewProductDraft() {
     eanCode: "",
     hsnCode: "",
     procurementType: "Import",
+    productCostUsd: 0,
     productCostInr: 0,
-    countryOfOrigin: getLatestCountryOfOrigin(),
-    bcdRate: defaultSettings.bcdRate,
+    weightKg: 0,
+    countryOfOrigin: "",
+    cooBenefit: "No",
+    bcdRate: 0,
+    gstRate: 0,
+    overheadCostInr: 0,
+    amazonSellingPriceInr: 0,
+    dealPriceRate: 0,
+    dealPriceInr: 0,
+    commissionRate: 0,
+    pickPackFeeInr: 0,
+    weightHandlingFeeInr: 0,
+    fixedClosingFeeInr: 0,
+    tdsTcsRate: 0,
   });
-  applyCommissionForProductCategory(draft);
   return draft;
+}
+
+function startNewProductDraft() {
+  productDraft = createNewProductDraft();
+  productDraftMode = "new";
+  productDraftOriginalId = null;
+  selectedProductId = productDraft.id;
+  productSaveMessage = "";
+  clearCommissionPreview();
+  activeGroup = "Product";
+}
+
+function openRequestedNewProductDraft() {
+  if (!pendingNewProductRequest) return;
+  pendingNewProductRequest = false;
+  startNewProductDraft();
+  window.history.replaceState({}, "", window.location.pathname);
 }
 
 function createProductEditDraft(product) {
@@ -2171,6 +2209,7 @@ function renderProductField(product, [key, label, type, suffixOrOptions]) {
     const categories = getKnownCategories();
     control = `
       <select data-product-field="${key}"${disabledAttribute}>
+        <option value="" ${rawValue ? "" : "selected"}>Select category</option>
         ${categories
           .map(
             (category) => `
@@ -2183,9 +2222,16 @@ function renderProductField(product, [key, label, type, suffixOrOptions]) {
     `;
   } else {
     const value = type === "percentDecimal" ? safeNumber(rawValue) * 100 : rawValue;
-    const displayValue = twoDecimalPricingFields.has(key)
-      ? safeNumber(value).toFixed(2)
-      : value;
+    const blankNewDraftNumber =
+      isNewProductDraft() &&
+      isDraftProduct(product) &&
+      ["number", "percentDecimal"].includes(type) &&
+      safeNumber(value) === 0;
+    const displayValue = blankNewDraftNumber
+      ? ""
+      : (twoDecimalPricingFields.has(key)
+        ? safeNumber(value).toFixed(2)
+        : value);
     const isTextInput = type === "text" || type === "country";
     const listAttribute = type === "country" ? ` list="country-options"` : "";
     const numberLimits = key === "dealPriceRate" ? ` min="0" max="99.99"` : "";
@@ -3137,12 +3183,8 @@ async function handleAction(action) {
   }
 
   if (action === "add") {
-    productSaveMessage = "";
-    clearCommissionPreview();
     if (!productDraft) {
-      productDraft = createNewProductDraft();
-      productDraftMode = "new";
-      productDraftOriginalId = null;
+      startNewProductDraft();
     }
     selectedProductId = productDraft.id;
     activeGroup = "Product";
