@@ -4,6 +4,10 @@ import {
   calculateSellingPriceFromDeal,
 } from "./pricing.js";
 import { normalizeInvoiceIdentifier, parseOrderInvoiceRows } from "./invoice-orders.js";
+import {
+  renderWorkspaceConnectionStatus,
+  startWorkspaceConnectionMonitor,
+} from "./connection-status.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
 const ORDER_HISTORY_STORAGE_KEY = "custom-import-profit-order-history-v1";
@@ -379,14 +383,6 @@ function setSyncStatus(label, tone, title) {
   syncStatus = label;
   syncStatusTone = tone;
   syncStatusTitle = title || label;
-  const control = document.querySelector("[data-sync-control]");
-  const text = document.querySelector("[data-sync-status]");
-  const connected = navigator.onLine && tone !== "error";
-  if (control) {
-    control.className = `sync-control connection-status ${connected ? "synced" : "error"}`;
-    control.title = syncStatusTitle;
-  }
-  if (text) text.textContent = connected ? "Online" : "Offline";
 }
 
 async function requestApi(path, { method = "GET", body } = {}) {
@@ -1671,19 +1667,9 @@ function renderHeader(page) {
 }
 
 function renderSyncControl() {
-  const connected = navigator.onLine && syncStatusTone !== "error";
   return `
     ${currentUser?.role === "admin" ? `<a class="nav-link" href="/admin">Users & Logs</a>` : ""}
-    <button
-      class="sync-control connection-status ${connected ? "synced" : "error"}"
-      data-action="sync"
-      data-sync-control
-      type="button"
-      title="${escapeAttribute(syncStatusTitle)}"
-    >
-      <span class="sync-dot" aria-hidden="true"></span>
-      <span data-sync-status>${connected ? "Online" : "Offline"}</span>
-    </button>
+    ${renderWorkspaceConnectionStatus()}
     <span class="sidebar-section-label account-section-label">Account</span>
     <span class="account-chip" title="${escapeAttribute(currentUser?.email || "")}">
       <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
@@ -3253,11 +3239,4 @@ function escapeAttribute(value) {
 
 render();
 initializeAuth();
-
-window.addEventListener("offline", () => {
-  setSyncStatus("Offline", "error", "The app is offline.");
-});
-
-window.addEventListener("online", () => {
-  if (currentUser) initializeAuthenticatedCloudSync();
-});
+startWorkspaceConnectionMonitor();

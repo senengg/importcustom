@@ -17,6 +17,7 @@ const requiredFiles = [
   "products.html",
   "master/index.html",
   "src/app.js",
+  "src/connection-status.js",
   "src/pricing.js",
   "src/invoice-orders.js",
   "src/invoices.js",
@@ -26,6 +27,7 @@ const requiredFiles = [
   "src/xlsx-export.js",
   "src/styles.css",
   "api/rates.js",
+  "api/health.js",
   "api/state.js",
   "api/auth/login.js",
   "api/auth/session.js",
@@ -60,6 +62,7 @@ const invoicePageSource = await fs.readFile("invoices.html", "utf8");
 const invoiceAppSource = await fs.readFile(path.join("src", "invoices.js"), "utf8");
 const productsAppSource = await fs.readFile(path.join("src", "products.js"), "utf8");
 const productUploadSource = await fs.readFile(path.join("src", "product-upload.js"), "utf8");
+const connectionStatusSource = await fs.readFile(path.join("src", "connection-status.js"), "utf8");
 const formulaChecks = [
   "freightPerKgUsd) * weightKg",
   "safeNumber(settings.insuranceRate) / 100",
@@ -217,7 +220,6 @@ const formulaChecks = [
   "/api/auth/session",
   "Users & Logs",
   "saveCloudStateNow()",
-  "data-sync-control",
   "href=\"master/index.html\"",
 ];
 
@@ -319,6 +321,17 @@ for (const expected of [
 for (const formula of formulaChecks) {
   if (!appSource.includes(formula)) {
     throw new Error(`Formula check failed: ${formula}`);
+  }
+}
+
+for (const expected of [
+  "/api/health",
+  "data-workspace-connection",
+  "startWorkspaceConnectionMonitor",
+  "response.ok && data?.online === true",
+]) {
+  if (!connectionStatusSource.includes(expected)) {
+    throw new Error(`Workspace connection check failed: ${expected}`);
   }
 }
 

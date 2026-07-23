@@ -7,6 +7,6 @@
     "dev": "node scripts/local-server.mjs",
     "build": "node scripts/build-app.mjs",
     "start": "node scripts/local-server.mjs",
-    "test": "node scripts/test-state-api.mjs && node scripts/test-recovery-api.mjs && node scripts/verify-app.mjs"
+    "test": "node scripts/test-state-api.mjs && node scripts/test-recovery-api.mjs && node scripts/test-health-api.mjs && node scripts/verify-app.mjs"
   }
 }
