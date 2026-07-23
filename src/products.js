@@ -618,5 +618,18 @@ async function initialize() {
   render();
 }
 
-app.innerHTML = `<main class="login-page"><section class="login-card"><h1>Loading products…</h1></section></main>`;
+app.innerHTML = `
+  <main class="login-page loading-page">
+    <section class="branded-loader" role="status" aria-live="polite">
+      <div class="loader-orbit" aria-hidden="true">
+        <img class="loader-mark" src="import-profit-mark.png" alt="" />
+      </div>
+      <p class="eyebrow">Import and Profit App</p>
+      <h1>Preparing your products</h1>
+      <div class="loader-progress" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </section>
+  </main>
+`;
 initialize();

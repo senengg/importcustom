@@ -1489,22 +1489,41 @@ function summarize() {
   };
 }
 
+function renderAppLoader(message = "Preparing your workspace") {
+  return `
+    <main class="login-page loading-page">
+      <section class="branded-loader" role="status" aria-live="polite">
+        <div class="loader-orbit" aria-hidden="true">
+          <img class="loader-mark" src="import-profit-mark.png" alt="" />
+        </div>
+        <p class="eyebrow">Import and Profit App</p>
+        <h1>${escapeHtml(message)}</h1>
+        <div class="loader-progress" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+      </section>
+    </main>
+  `;
+}
+
 function renderLoginPage() {
+  if (!authReady) return renderAppLoader();
+
   const completingPassword = authCallback.accessToken && ["invite", "recovery"].includes(authCallback.type);
   return `
     <main class="login-page">
       <section class="login-card">
         <img class="brand-mark login-mark" src="import-profit-mark.png" alt="" />
         <p class="eyebrow">Import and Profit App</p>
-        <h1>${completingPassword ? "Set your password" : (authReady ? "Sign in" : "Loading…")}</h1>
+        <h1>${completingPassword ? "Set your password" : "Sign in"}</h1>
         <p class="login-note">${completingPassword ? "Choose a password to complete your invitation or account recovery." : "Use the email address from your invitation. New accounts can only be created by an administrator."}</p>
-        ${authReady && completingPassword ? `
+        ${completingPassword ? `
           <form class="login-form" data-password-form>
             <label class="form-field"><span>New password</span><div class="input-shell"><input name="password" type="password" minlength="8" required /></div></label>
             <label class="form-field"><span>Confirm password</span><div class="input-shell"><input name="confirmPassword" type="password" minlength="8" required /></div></label>
             <button class="primary-button" type="submit">Save password</button>
           </form>
-        ` : authReady ? `
+        ` : `
           <form class="login-form" data-login-form>
             <label class="form-field">
               <span>Email</span>
@@ -1517,7 +1536,7 @@ function renderLoginPage() {
             <button class="primary-button" type="submit">Sign in</button>
             <button class="ghost-button" type="button" data-recover-password>Forgot password</button>
           </form>
-        ` : ""}
+        `}
         <p class="login-message" data-login-message>${escapeHtml(authMessage)}</p>
       </section>
     </main>
