@@ -11,6 +11,11 @@ import {
   matchesFilterValue,
   normalizeFilterValue,
 } from "./product-filters.js";
+import {
+  getBulkDeleteWarning,
+  getSelectedProducts,
+  removeSelectedProducts,
+} from "./product-bulk-actions.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
 const ORDER_HISTORY_STORAGE_KEY = "custom-import-profit-order-history-v1";
@@ -23,6 +28,8 @@ let cloudVersion = 0;
 let cloudSyncEnabled = false;
 let uploadStatus = "";
 let uploadStatusTone = "";
+let selectedProductIds = new Set();
+let bulkDeletePending = false;
 let localOrderInvoices = loadLocalOrderInvoices();
 let settings = {
   usdRate: 95.2,
@@ -57,6 +64,10 @@ const sortOptions = [
   { value: "lifetimeQuantityLow", label: "Lifetime ordered quantity: low to high" },
   { value: "lifetimeQuantityHigh", label: "Lifetime ordered quantity: high to low" },
 ];
+
+function canManageProducts() {
+  return ["admin", "editor"].includes(currentUser?.role);
+}
 
 function safeNumber(value) {
   const number = Number(value);
@@ -326,8 +337,22 @@ function renderSidebar() {
 function renderProductCard(product) {
   const sellingPrice = safeNumber(product.amazonSellingPriceInr);
   const metrics = calculateProductMetrics(product);
+  const selected = selectedProductIds.has(product.id);
   return `
-    <article class="catalog-card catalog-list-item">
+    <article
+      class="catalog-card catalog-list-item ${selected ? "selected" : ""}"
+      data-catalog-product-card="${escapeAttribute(product.id)}"
+    >
+      ${canManageProducts() ? `
+        <label class="catalog-product-selector" title="Select ${escapeAttribute(getProductTitle(product))}">
+          <input
+            type="checkbox"
+            data-catalog-product-select="${escapeAttribute(product.id)}"
+            ${selected ? "checked" : ""}
+          />
+          <span class="sr-only">Select ${escapeHtml(getProductTitle(product))}</span>
+        </label>
+      ` : ""}
       <div class="catalog-list-identity">
         <div class="catalog-card-head">
           <div>
@@ -459,6 +484,10 @@ function getVisibleProducts() {
 }
 
 function renderResults() {
+  const productIds = new Set(products.map((product) => product.id));
+  selectedProductIds = new Set(
+    [...selectedProductIds].filter((productId) => productIds.has(productId)),
+  );
   const visible = getVisibleProducts();
   const count = document.querySelector("[data-catalog-count]");
   const grid = document.querySelector("[data-catalog-grid]");
@@ -475,6 +504,100 @@ function renderResults() {
     grid.innerHTML = visible.length
       ? visible.map(renderProductCard).join("")
       : `<div class="catalog-empty">No products match the selected filters.</div>`;
+  }
+  bindProductSelectionEvents();
+  updateBulkSelectionControls(visible);
+}
+
+function updateBulkSelectionControls(visibleProducts = getVisibleProducts()) {
+  const visibleIds = visibleProducts.map((product) => product.id);
+  const selectedVisibleCount = visibleIds.filter((productId) =>
+    selectedProductIds.has(productId)
+  ).length;
+  const selectAll = document.querySelector("[data-catalog-select-all]");
+  if (selectAll) {
+    selectAll.checked = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+    selectAll.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleIds.length;
+    selectAll.disabled = bulkDeletePending || visibleIds.length === 0;
+  }
+
+  const selectedCount = document.querySelector("[data-catalog-selected-count]");
+  if (selectedCount) {
+    selectedCount.textContent = `${selectedProductIds.size} selected`;
+  }
+
+  const deleteButton = document.querySelector("[data-catalog-delete-selected]");
+  if (deleteButton) {
+    deleteButton.textContent = bulkDeletePending
+      ? "Deleting…"
+      : `Delete selected${selectedProductIds.size ? ` (${selectedProductIds.size})` : ""}`;
+    deleteButton.disabled =
+      bulkDeletePending ||
+      selectedProductIds.size === 0 ||
+      !cloudSyncEnabled;
+    deleteButton.title = cloudSyncEnabled
+      ? "Delete the selected products"
+      : "Connect to the shared workspace before deleting products";
+  }
+}
+
+function bindProductSelectionEvents() {
+  document.querySelectorAll("[data-catalog-product-select]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const productId = checkbox.dataset.catalogProductSelect;
+      if (checkbox.checked) selectedProductIds.add(productId);
+      else selectedProductIds.delete(productId);
+      const card = checkbox.closest("[data-catalog-product-card]");
+      card?.classList.toggle("selected", checkbox.checked);
+      updateBulkSelectionControls();
+    });
+  });
+}
+
+function toggleSelectAllVisible(event) {
+  getVisibleProducts().forEach((product) => {
+    if (event.currentTarget.checked) selectedProductIds.add(product.id);
+    else selectedProductIds.delete(product.id);
+  });
+  renderResults();
+}
+
+async function deleteSelectedProducts() {
+  if (bulkDeletePending || !canManageProducts()) return;
+  const selectedProducts = getSelectedProducts(products, selectedProductIds);
+  if (!selectedProducts.length) return;
+  if (!cloudSyncEnabled || !stateDocument) {
+    setUploadStatus("Connect to the shared workspace before deleting products.", "error");
+    return;
+  }
+  if (!window.confirm(getBulkDeleteWarning(selectedProducts))) return;
+
+  bulkDeletePending = true;
+  updateBulkSelectionControls();
+  const nextState = {
+    ...stateDocument,
+    products: removeSelectedProducts(products, selectedProductIds),
+  };
+
+  try {
+    const saved = await request("/api/state", {
+      method: "PUT",
+      body: JSON.stringify({ state: nextState, version: cloudVersion }),
+    });
+    cloudVersion = Number(saved.version || cloudVersion);
+    stateDocument = nextState;
+    products = nextState.products;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+    const deletedCount = selectedProducts.length;
+    selectedProductIds.clear();
+    uploadStatus = `${deletedCount} product${deletedCount === 1 ? "" : "s"} deleted from the shared workspace.`;
+    uploadStatusTone = "";
+    bulkDeletePending = false;
+    render();
+  } catch (error) {
+    bulkDeletePending = false;
+    setUploadStatus(error.message || "The selected products could not be deleted.", "error");
+    updateBulkSelectionControls();
   }
 }
 
@@ -652,6 +775,8 @@ function bindEvents() {
   });
   bindSearchableDropdowns();
   document.querySelector("[data-catalog-reset]")?.addEventListener("click", resetFilters);
+  document.querySelector("[data-catalog-select-all]")?.addEventListener("change", toggleSelectAllVisible);
+  document.querySelector("[data-catalog-delete-selected]")?.addEventListener("click", deleteSelectedProducts);
   document.querySelector("[data-catalog-upload]")?.addEventListener("change", handleCatalogUpload);
   document.querySelector("[data-catalog-download]")?.addEventListener("click", handleCatalogDownload);
   document.querySelector("[data-catalog-logout]")?.addEventListener("click", async () => {
@@ -691,6 +816,21 @@ function render() {
           data-catalog-upload-status
           ${uploadStatus ? "" : "hidden"}
         >${escapeHtml(uploadStatus)}</div>
+        ${canManageProducts() ? `
+          <div class="catalog-bulk-actions">
+            <label class="catalog-select-all">
+              <input data-catalog-select-all type="checkbox" />
+              <span>Select all filtered products</span>
+            </label>
+            <span class="catalog-selected-count" data-catalog-selected-count>0 selected</span>
+            <button
+              class="bulk-delete-button"
+              data-catalog-delete-selected
+              type="button"
+              disabled
+            >Delete selected</button>
+          </div>
+        ` : ""}
         <div class="catalog-filters">
           <label class="form-field catalog-search">
             <span>Search all fields</span>

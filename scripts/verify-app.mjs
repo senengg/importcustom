@@ -23,6 +23,7 @@ const requiredFiles = [
   "src/invoices.js",
   "src/products.js",
   "src/product-filters.js",
+  "src/product-bulk-actions.js",
   "src/product-upload.js",
   "src/xlsx-reader.js",
   "src/xlsx-export.js",
@@ -74,9 +75,6 @@ const formulaChecks = [
   "indiaProcurementDisabledFields",
   "applyIndiaProcurementDefaults(product)",
   "isProductFieldDisabled(product, key)",
-  "confirmProductDelete(product)",
-  "const productIdToDelete = isDraftProduct(product)",
-  "product.id !== productIdToDelete",
   "confirmMasterCategoryDelete(row)",
   "[\"procurementType\", \"Procurement type\", \"select\", [\"Import\", \"India\"]]",
   "[\"color\", \"Color\", \"text\"]",
@@ -354,6 +352,12 @@ for (const expected of [
   "Search designs",
   "Search colors",
   "Search sorting options",
+  "data-catalog-product-select",
+  "data-catalog-select-all",
+  "data-catalog-delete-selected",
+  "deleteSelectedProducts",
+  "getBulkDeleteWarning",
+  "removeSelectedProducts",
 ]) {
   if (!productsAppSource.includes(expected)) {
     throw new Error(`Product catalogue upload check failed: ${expected}`);
@@ -423,6 +427,13 @@ for (const expected of [
 
 if (appSource.includes("Calculation Table") || appSource.includes("renderResultRow")) {
   throw new Error("The all-products calculation table should not be rendered.");
+}
+
+if (
+  appSource.includes('data-action="duplicate"') ||
+  appSource.includes('data-action="delete"')
+) {
+  throw new Error("Product duplicate and delete actions must not appear in the calculator editor.");
 }
 
 if (appSource.includes("At least one product is required") || appSource.includes("!stored.products.length")) {

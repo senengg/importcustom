@@ -959,11 +959,6 @@ function getDeleteName(value, fallback) {
   return String(value || "").trim() || fallback;
 }
 
-function confirmProductDelete(product) {
-  const productName = getDeleteName(product?.productName, "this product");
-  return window.confirm(`Delete ${productName}?\nThis cannot be undone.`);
-}
-
 function confirmMasterCategoryDelete(row) {
   const categoryName = getDeleteName(row?.category, "this category");
   return window.confirm(`Delete ${categoryName}?\nSave Master Data to keep this change.`);
@@ -2082,8 +2077,6 @@ function renderEditor(product, calc) {
       <div class="row-actions ${draft ? "draft-actions" : ""}">
         <button class="primary-button compact" data-action="save-product" ${hasChanges ? "" : "hidden"} ${productMessage ? "disabled" : ""}>Save Product</button>
         <button class="ghost-button compact" data-action="discard-product" ${hasChanges ? "" : "hidden"}>Discard</button>
-        <button class="icon-button" data-action="duplicate" title="Duplicate" aria-label="Duplicate">⧉</button>
-        <button class="icon-button danger" data-action="delete" title="Delete" aria-label="Delete">×</button>
       </div>
     </div>
     <div class="product-message error" data-product-message ${productMessage ? "" : "hidden"}>${escapeHtml(productMessage)}</div>
@@ -3153,52 +3146,6 @@ async function handleAction(action) {
     }
     selectedProductId = productDraft.id;
     activeGroup = "Product";
-    render();
-  }
-
-  if (action === "duplicate") {
-    const product = state.products.find((item) => item.id === selectedProductId);
-    if (!product) return;
-    const copy = {
-      ...product,
-      id: crypto.randomUUID(),
-      productName: `${product.productName || "Product"} Copy`,
-    };
-    const duplicate = findDuplicateProductCode(copy, state.products);
-    if (duplicate) {
-      productSaveMessage = getDuplicateProductMessage(duplicate);
-      render();
-      return;
-    }
-    state.products.push(copy);
-    clearCommissionPreview();
-    productSaveMessage = "";
-    selectedProductId = copy.id;
-    saveState();
-    render();
-  }
-
-  if (action === "delete") {
-    const product = getSelectedProduct();
-    if (!product) return;
-    const deletingNewDraft = isDraftProduct(product) && isNewProductDraft();
-    if (!confirmProductDelete(product)) return;
-    clearCommissionPreview();
-    productSaveMessage = "";
-    if (deletingNewDraft) {
-      resetProductDraft();
-      selectedProductId = state.products[0]?.id ?? null;
-      render();
-      return;
-    }
-
-    const productIdToDelete = isDraftProduct(product)
-      ? productDraftOriginalId
-      : selectedProductId;
-    resetProductDraft();
-    state.products = state.products.filter((product) => product.id !== productIdToDelete);
-    selectedProductId = state.products[0]?.id ?? null;
-    saveState();
     render();
   }
 

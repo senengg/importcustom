@@ -129,8 +129,8 @@ export async function requireUser(request, response) {
   return { configuration, accessToken, authUser, profile };
 }
 
-export async function insertAuditLog(configuration, profile, entry) {
-  const record = {
+function buildAuditRecord(profile, entry) {
+  return {
     workspace_id: profile.workspace_id,
     user_id: profile.id,
     user_email: profile.email,
@@ -141,18 +141,29 @@ export async function insertAuditLog(configuration, profile, entry) {
     old_data: entry.oldData ?? null,
     new_data: entry.newData ?? null,
   };
-  await supabaseFetch(configuration, "/rest/v1/audit_logs", {
-    method: "POST",
-    body: record,
-    service: true,
-    headers: { Prefer: "return=minimal" },
-  });
+}
+
+export async function insertAuditLogs(configuration, profile, entries) {
+  const records = entries.map((entry) => buildAuditRecord(profile, entry));
+  const batchSize = 100;
+  for (let index = 0; index < records.length; index += batchSize) {
+    await supabaseFetch(configuration, "/rest/v1/audit_logs", {
+      method: "POST",
+      body: records.slice(index, index + batchSize),
+      service: true,
+      headers: { Prefer: "return=minimal" },
+    });
+  }
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   await supabaseFetch(
     configuration,
     `/rest/v1/audit_logs?created_at=lt.${encodeURIComponent(cutoff)}`,
     { method: "DELETE", service: true, headers: { Prefer: "return=minimal" } },
   ).catch(() => null);
+}
+
+export async function insertAuditLog(configuration, profile, entry) {
+  await insertAuditLogs(configuration, profile, [entry]);
 }
 
 export function getRequestIp(request) {

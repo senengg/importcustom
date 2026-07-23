@@ -1,4 +1,4 @@
-import { insertAuditLog, readJsonBody, requireUser, sendJson, supabaseFetch } from "./_lib/supabase.js";
+import { insertAuditLogs, readJsonBody, requireUser, sendJson, supabaseFetch } from "./_lib/supabase.js";
 
 function isValidState(state) {
   return Boolean(
@@ -120,9 +120,11 @@ export default async function handler(request, response) {
         });
       }
 
-      for (const entry of buildAuditEntries(current?.state || null, body.state)) {
-        await insertAuditLog(session.configuration, session.profile, entry);
-      }
+      await insertAuditLogs(
+        session.configuration,
+        session.profile,
+        buildAuditEntries(current?.state || null, body.state),
+      );
       sendJson(response, 200, { saved: true, version: nextVersion, updatedAt });
       return;
     }

@@ -22,6 +22,18 @@
   display: none !important;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  margin: -1px;
+  white-space: nowrap;
+}
+
 html {
   min-width: 320px;
   background: var(--bg);
@@ -2234,6 +2246,62 @@ tbody tr:hover {
   margin-bottom: 16px;
 }
 
+.catalog-bulk-actions {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-strong);
+}
+
+.catalog-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.catalog-select-all input,
+.catalog-product-selector input {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--teal);
+}
+
+.catalog-selected-count {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.bulk-delete-button {
+  min-height: 34px;
+  margin-left: auto;
+  padding: 0 12px;
+  border: 1px solid #efb8bf;
+  border-radius: 7px;
+  background: #fff5f6;
+  color: #c23d4d;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.bulk-delete-button:hover:not(:disabled) {
+  border-color: #d84d5f;
+  background: #ffecee;
+}
+
 .catalog-products-heading,
 .catalog-filter-actions {
   display: flex;
@@ -2408,6 +2476,7 @@ tbody tr:hover {
 }
 
 .catalog-card {
+  position: relative;
   display: grid;
   gap: 15px;
   padding: 18px;
@@ -2415,6 +2484,28 @@ tbody tr:hover {
   border-radius: 11px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.catalog-card.selected {
+  border-color: var(--teal);
+  background: #fbfbff;
+  box-shadow: 0 0 0 2px rgba(93, 91, 214, 0.09);
+}
+
+.catalog-product-selector {
+  position: absolute;
+  top: 19px;
+  left: 18px;
+  z-index: 2;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  cursor: pointer;
+}
+
+.catalog-product-selector + .catalog-list-identity {
+  padding-left: 34px;
 }
 
 .catalog-list-identity {
