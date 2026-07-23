@@ -48,15 +48,28 @@ function render() {
     <main class="shell admin-shell">
       <header class="app-header">
         <div class="brand-lockup">
-          <img class="brand-mark" src="import-profit-mark.png" alt="" />
-          <div><p class="eyebrow">Import and Profit App</p><h1>Users & Activity</h1></div>
+          <img class="brand-mark" src="/import-profit-mark.png" alt="" />
+          <div><p class="eyebrow">Import and Profit</p><strong class="sidebar-title">Workspace</strong></div>
         </div>
         <div class="header-actions">
-          <span class="account-chip"><strong>${escapeHtml(currentUser.full_name)}</strong><small>${escapeHtml(currentUser.role)}</small></span>
-          <a class="nav-link" href="/">Products</a>
+          <span class="sidebar-section-label">Workspace</span>
+          <a class="nav-link" href="/">Calculator</a>
+          <a class="nav-link" href="/products.html">All Products</a>
+          <a class="nav-link" href="/invoices.html">Invoices</a>
           <a class="nav-link" href="/master">Master Data</a>
+          <a class="nav-link active" href="/admin">Users & Logs</a>
+          <span class="sidebar-section-label account-section-label">Account</span>
+          <span class="account-chip"><strong>${escapeHtml(currentUser.full_name)}</strong><small>${escapeHtml(currentUser.role)}</small></span>
         </div>
       </header>
+
+      <section class="page-topbar">
+        <div>
+          <p class="page-kicker">Workspace / Administration</p>
+          <h1>Users & Activity</h1>
+        </div>
+        <span class="page-status-pill">${users.length} user${users.length === 1 ? "" : "s"}</span>
+      </section>
 
       <section class="admin-grid">
         <article class="admin-panel">

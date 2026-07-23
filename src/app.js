@@ -33,6 +33,8 @@ const defaultDashboardCards = [
 const defaultSettings = {
   usdRate: 95.2,
   freightPerKgUsd: 4.5,
+  amazonCommissionWaiverEnabled: true,
+  amazonCommissionWaiverThresholdInr: 999,
   insuranceRate: 1.125,
   bcdRate: 15,
   swsRate: 10,
@@ -270,8 +272,13 @@ const dashboardCardDefinitions = [
   },
 ];
 
+const requestedProductId = new URLSearchParams(window.location.search).get("product");
 let state = loadState();
-let selectedProductId = state.products[0]?.id ?? null;
+localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+let calculatorFreightPerKgUsd = safeNumber(state.settings.freightPerKgUsd);
+let selectedProductId = state.products.some((product) => product.id === requestedProductId)
+  ? requestedProductId
+  : (state.products[0]?.id ?? null);
 let activeGroup = "Product";
 let exchangeStatus = "";
 let productSearchQuery = "";
@@ -316,6 +323,9 @@ function createDefaultState() {
 function normalizeStoredState(stored) {
   if (!stored?.settings || !Array.isArray(stored?.products)) return null;
   const settings = { ...defaultSettings, ...stored.settings };
+  settings.amazonCommissionWaiverEnabled = settings.amazonCommissionWaiverEnabled === true;
+  settings.amazonCommissionWaiverThresholdInr =
+    safeNumber(settings.amazonCommissionWaiverThresholdInr) || 999;
   settings.dashboardCards = normalizeDashboardCards(settings.dashboardCards);
   return {
     settings,
@@ -464,7 +474,12 @@ function scheduleCloudSave() {
 
 function applyCloudState(cloudState) {
   state = cloudState;
-  selectedProductId = state.products[0]?.id ?? null;
+  calculatorFreightPerKgUsd = safeNumber(state.settings.freightPerKgUsd);
+  selectedProductId = state.products.some((product) => product.id === requestedProductId)
+    ? requestedProductId
+    : (state.products.some((product) => product.id === selectedProductId)
+      ? selectedProductId
+      : (state.products[0]?.id ?? null));
   selectedMasterCategoryId = state.commissionMaster[0]?.id ?? null;
   masterDraft = null;
   resetProductDraft();
@@ -860,14 +875,6 @@ function getListedProducts() {
   );
 }
 
-function getProductListCountLabel(visibleCount = getListedProducts().length) {
-  const totalCount = getListedProducts().length;
-  const suffix = productDraft ? (isNewProductDraft() ? " including draft" : " with unsaved changes") : "";
-  return visibleCount === totalCount
-    ? `${totalCount} products${suffix}`
-    : `${visibleCount} of ${totalCount} products${suffix}`;
-}
-
 function getProductListScrollTop() {
   return document.querySelector("[data-product-list-scroll]")?.scrollTop ?? 0;
 }
@@ -1211,6 +1218,9 @@ function cloneCommissionMasterRows(rows) {
 function createMasterDraft() {
   return {
     settings: {
+      freightPerKgUsd: state.settings.freightPerKgUsd,
+      amazonCommissionWaiverEnabled: state.settings.amazonCommissionWaiverEnabled,
+      amazonCommissionWaiverThresholdInr: state.settings.amazonCommissionWaiverThresholdInr,
       insuranceRate: state.settings.insuranceRate,
       swsRate: state.settings.swsRate,
       warehouseRate: state.settings.warehouseRate,
@@ -1313,11 +1323,21 @@ function getLatestMasterCategory() {
   return getKnownCategories()[0] || "";
 }
 
-function calculateAmazonAmounts(priceInr, gstRate, product, landingCostInr) {
+function getEffectiveAmazonCommissionRate(priceInr, product, settings = state.settings) {
+  const waiverThresholdInr = safeNumber(settings.amazonCommissionWaiverThresholdInr);
+  const waiverApplies =
+    settings.amazonCommissionWaiverEnabled === true &&
+    priceInr > 0 &&
+    priceInr <= waiverThresholdInr;
+  return waiverApplies ? 0 : safeNumber(product.commissionRate);
+}
+
+function calculateAmazonAmounts(priceInr, gstRate, product, landingCostInr, settings = state.settings) {
   const gstOnSellingPriceInr = priceInr * (gstRate / (100 + gstRate));
+  const commissionRate = getEffectiveAmazonCommissionRate(priceInr, product, settings);
   const settlementInr =
     priceInr -
-    safeNumber(product.commissionRate) * priceInr -
+    commissionRate * priceInr -
     safeNumber(product.pickPackFeeInr) -
     safeNumber(product.weightHandlingFeeInr) -
     safeNumber(product.fixedClosingFeeInr) -
@@ -1326,13 +1346,21 @@ function calculateAmazonAmounts(priceInr, gstRate, product, landingCostInr) {
 
   return {
     gstOnSellingPriceInr,
+    commissionRate,
     settlementInr,
     profitInr,
     margin: priceInr ? profitInr / priceInr : 0,
   };
 }
 
-function calculateProduct(product, settings = state.settings) {
+function getCalculatorSettings() {
+  return {
+    ...state.settings,
+    freightPerKgUsd: calculatorFreightPerKgUsd,
+  };
+}
+
+function calculateProduct(product, settings = getCalculatorSettings()) {
   const domesticProduct = isIndiaProcurement(product);
   const productCostUsd = domesticProduct ? 0 : safeNumber(product.productCostUsd);
   const weightKg = safeNumber(product.weightKg);
@@ -1366,8 +1394,15 @@ function calculateProduct(product, settings = state.settings) {
     gstRate,
     product,
     landingCostInr,
+    settings,
   );
-  const amazonDealAmounts = calculateAmazonAmounts(dealPriceInr, gstRate, product, landingCostInr);
+  const amazonDealAmounts = calculateAmazonAmounts(
+    dealPriceInr,
+    gstRate,
+    product,
+    landingCostInr,
+    settings,
+  );
   const gstAmazonInr = amazonAmounts.gstOnSellingPriceInr;
   const settlementAmazonInr = amazonAmounts.settlementInr;
   const gstOnAmazonSellingPriceInr = amazonDealAmounts.gstOnSellingPriceInr;
@@ -1412,6 +1447,8 @@ function calculateProduct(product, settings = state.settings) {
     settlementAmazonDealInr,
     amazonProfitInr,
     amazonDealProfitInr,
+    amazonCommissionRate: amazonAmounts.commissionRate,
+    amazonDealCommissionRate: amazonDealAmounts.commissionRate,
     profitInr,
     marginAmazon,
     marginAmazonDeal,
@@ -1522,33 +1559,26 @@ function render() {
     <main class="shell">
       <header class="app-header">
         <div class="brand-lockup">
-          <img class="brand-mark" src="import-profit-mark.png" alt="" />
+          <img class="brand-mark" src="/import-profit-mark.png" alt="" />
           <div>
-            <p class="eyebrow">Import and Profit App</p>
-            <h1>Custom Import Profit Calculator</h1>
+            <p class="eyebrow">Import and Profit</p>
+            <strong class="sidebar-title">Workspace</strong>
           </div>
         </div>
         <div class="header-actions">
-          ${renderSyncControl()}
+          <span class="sidebar-section-label">Workspace</span>
+          <a class="nav-link active" href="index.html">Calculator</a>
+          <a class="nav-link" href="products.html">All Products</a>
           <a class="nav-link" href="invoices.html">Invoices</a>
-          <a class="nav-link" href="master/">Master Data</a>
-          <label class="ghost-button file-button" title="Upload Excel">
-            Upload Excel
-            <input
-              data-product-upload
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            />
-          </label>
-          <button class="icon-button" data-action="reset" title="Reset" aria-label="Reset">↺</button>
-          <button class="icon-button" data-action="export" title="Export CSV" aria-label="Export CSV">⇩</button>
-          <button class="primary-button" data-action="add">+ Product</button>
+          <a class="nav-link" href="master/index.html">Master Data</a>
+          <button class="ghost-button" data-action="reset" type="button">Reset</button>
+          ${renderSyncControl()}
         </div>
       </header>
 
       <section class="settings-band">
         ${renderSettingInput("usdRate", "USD Rate", state.settings.usdRate, "INR")}
-        ${renderSettingInput("freightPerKgUsd", "Freight / kg", state.settings.freightPerKgUsd, "USD")}
+        ${renderCalculatorFreightInput(calculatorFreightPerKgUsd)}
         <div class="rate-tools">
           <button class="ghost-button" data-action="refresh-rate">Live USD/INR</button>
           <span class="status-text">${exchangeStatus || state.settings.fxUpdatedAt}</span>
@@ -1558,8 +1588,7 @@ function render() {
       <section class="workspace">
         <aside class="product-list">
           <div class="section-title">
-            <h2>Products</h2>
-            <button class="icon-button small" data-action="add" title="Add product" aria-label="Add product">+</button>
+            <h2>Find Product</h2>
           </div>
           ${renderProductSearch()}
           <div class="list-scroll" data-product-list-scroll>
@@ -1597,28 +1626,34 @@ function renderHeader(page) {
   return `
     <header class="app-header">
       <div class="brand-lockup">
-        <img class="brand-mark" src="import-profit-mark.png" alt="" />
+        <img class="brand-mark" src="/import-profit-mark.png" alt="" />
         <div>
-          <p class="eyebrow">Import and Profit App</p>
-          <h1>${page === "master" ? "Master Data" : "Custom Import Profit Calculator"}</h1>
+          <p class="eyebrow">Import and Profit</p>
+          <strong class="sidebar-title">Workspace</strong>
         </div>
       </div>
       <div class="header-actions">
-        ${renderSyncControl()}
-        <a class="nav-link" href="../index.html">Products</a>
+        <span class="sidebar-section-label">Workspace</span>
+        <a class="nav-link" href="../index.html">Calculator</a>
+        <a class="nav-link" href="../products.html">All Products</a>
         <a class="nav-link" href="../invoices.html">Invoices</a>
-        <a class="nav-link active" href="../master/">Master Data</a>
+        <a class="nav-link active" href="../master/index.html">Master Data</a>
+        ${renderSyncControl()}
       </div>
     </header>
+    <section class="page-topbar">
+      <div>
+        <p class="page-kicker">Workspace / Settings</p>
+        <h1>Master Data</h1>
+      </div>
+      <span class="page-status-pill">Configuration</span>
+    </section>
   `;
 }
 
 function renderSyncControl() {
   return `
-    <span class="account-chip" title="${escapeAttribute(currentUser?.email || "")}">
-      <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
-      <small>${escapeHtml(currentUser?.role || "")}</small>
-    </span>
+    <span class="sidebar-section-label account-section-label">Account</span>
     ${currentUser?.role === "admin" ? `<a class="nav-link" href="/admin">Users & Logs</a>` : ""}
     <button
       class="sync-control ${syncStatusTone}"
@@ -1630,6 +1665,10 @@ function renderSyncControl() {
       <span class="sync-dot" aria-hidden="true"></span>
       <span data-sync-status>${escapeHtml(syncStatus)}</span>
     </button>
+    <span class="account-chip" title="${escapeAttribute(currentUser?.email || "")}">
+      <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
+      <small>${escapeHtml(currentUser?.role || "")}</small>
+    </span>
     <button class="ghost-button compact" data-action="logout" type="button">Logout</button>
   `;
 }
@@ -1641,6 +1680,24 @@ function renderSettingInput(key, label, value, suffix) {
       <div class="input-shell">
         <input data-setting="${key}" type="number" step="0.001" value="${value}" />
         <b>${suffix}</b>
+      </div>
+    </label>
+  `;
+}
+
+function renderCalculatorFreightInput(value) {
+  return `
+    <label class="setting-field">
+      <span>Freight / kg</span>
+      <div class="input-shell">
+        <input
+          data-calculator-freight
+          type="number"
+          step="0.001"
+          value="${value}"
+          aria-label="Temporary freight per kilogram"
+        />
+        <b>USD</b>
       </div>
     </label>
   `;
@@ -1670,6 +1727,8 @@ function renderMasterDataPage() {
         <button class="primary-button" data-action="save-master">Save Master Data</button>
       </section>
       ${renderCategoryCommissionSection()}
+      ${renderAmazonCommissionWaiverSection()}
+      ${renderFreightSection()}
       ${renderInsuranceSection()}
       ${renderSwsSection()}
       ${renderWarehouseSection()}
@@ -1679,6 +1738,41 @@ function renderMasterDataPage() {
 
 function renderCommissionMaster() {
   return renderCategoryCommissionSection();
+}
+
+function renderAmazonCommissionWaiverSection() {
+  const draftSettings = getDraftSettings();
+  const enabled = draftSettings.amazonCommissionWaiverEnabled === true;
+  return `
+    <section class="master-section">
+      <div class="section-title">
+        <div>
+          <h2>Amazon Commission Waiver</h2>
+          <p class="section-note">Temporarily use 0% commission when the applicable selling or deal price is at or below the limit.</p>
+        </div>
+        <span class="section-pill ${enabled ? "active" : ""}">${enabled ? "Active" : "Inactive"}</span>
+      </div>
+      <div class="commission-waiver-settings">
+        <label class="waiver-toggle">
+          <input
+            data-master-setting="amazonCommissionWaiverEnabled"
+            type="checkbox"
+            ${enabled ? "checked" : ""}
+          />
+          <span>
+            <strong>Enable temporary waiver</strong>
+            <small>Switch this off when Amazon ends the waiver.</small>
+          </span>
+        </label>
+        ${renderMasterSettingInput(
+          "amazonCommissionWaiverThresholdInr",
+          "Price limit",
+          draftSettings.amazonCommissionWaiverThresholdInr,
+          "INR",
+        )}
+      </div>
+    </section>
+  `;
 }
 
 function renderCategoryCommissionSection() {
@@ -1725,6 +1819,23 @@ function getSelectedCommissionRow() {
   const fallbackRow = rows[0] || null;
   selectedMasterCategoryId = fallbackRow?.id ?? null;
   return fallbackRow;
+}
+
+function renderFreightSection() {
+  const draftSettings = getDraftSettings();
+  return `
+    <section class="master-section">
+      <div class="section-title">
+        <div>
+          <h2>Freight</h2>
+          <p class="section-note">Saved freight rate used as the calculator default.</p>
+        </div>
+      </div>
+      <div class="master-grid compact">
+        ${renderMasterSettingInput("freightPerKgUsd", "Freight / kg", draftSettings.freightPerKgUsd, "USD")}
+      </div>
+    </section>
+  `;
 }
 
 function renderInsuranceSection() {
@@ -1854,32 +1965,33 @@ function renderProductRow(product) {
 
 function renderProductSearch() {
   return `
-    <div class="product-tools">
-      <div class="input-shell search-shell">
-        <input
-          data-product-search
-          type="search"
-          placeholder="Search product, category, color, SKU, ASIN, EAN, HSN"
-          value="${escapeAttribute(productSearchQuery)}"
-          aria-label="Search products"
-        />
+    <div class="product-search-control">
+      <div class="product-tools">
+        <div class="input-shell search-shell">
+          <input
+            data-product-search
+            type="search"
+            placeholder="Search product, category, color, SKU, ASIN, EAN, HSN"
+            value="${escapeAttribute(productSearchQuery)}"
+            aria-label="Search products"
+          />
+        </div>
+        <div class="input-shell filter-shell">
+          <select data-product-filter aria-label="Filter search field">
+            ${productSearchFilters
+              .map(
+                (filter) => `
+                  <option value="${filter.value}" ${productFilterField === filter.value ? "selected" : ""}>
+                    ${filter.label}
+                  </option>
+                `,
+              )
+              .join("")}
+          </select>
+        </div>
       </div>
-      <div class="input-shell filter-shell">
-        <select data-product-filter aria-label="Filter search field">
-          ${productSearchFilters
-            .map(
-              (filter) => `
-                <option value="${filter.value}" ${productFilterField === filter.value ? "selected" : ""}>
-                  ${filter.label}
-                </option>
-              `,
-            )
-            .join("")}
-        </select>
-      </div>
+      ${uploadStatus ? `<div class="upload-status ${uploadStatusTone}">${escapeHtml(uploadStatus)}</div>` : ""}
     </div>
-    <div class="filter-summary" data-filter-count>${getProductListCountLabel()}</div>
-    ${uploadStatus ? `<div class="upload-status ${uploadStatusTone}">${escapeHtml(uploadStatus)}</div>` : ""}
   `;
 }
 
@@ -1923,14 +2035,12 @@ function renderOrderHistory(product) {
     <section class="order-history-panel">
       <div class="order-history-head">
         <div>
-          <p class="eyebrow">Local order tracking</p>
           <h3>Lifetime ordered quantity</h3>
-          <p>Saved only in this browser. Nothing in this section is uploaded to the cloud.</p>
         </div>
         <strong class="order-total">${formatOrderQuantity(totalQuantity)}</strong>
       </div>
       ${invoiceUploadStatus ? `<div class="upload-status ${invoiceUploadStatusTone}">${escapeHtml(invoiceUploadStatus)}</div>` : ""}
-      <div class="order-history-meta">${localOrderInvoices.length} invoice${localOrderInvoices.length === 1 ? "" : "s"} stored locally</div>
+      <div class="order-history-meta">No. of invoices: <strong>${history.length}</strong></div>
       ${history.length ? `
         <div class="order-history-table" role="table" aria-label="Product invoice history">
           <div class="order-history-row order-history-labels" role="row">
@@ -1960,7 +2070,7 @@ function renderEditor(product, calc) {
   return `
     <div class="editor-head">
       <div>
-        <p class="eyebrow">${draft ? getDraftProductLabel() : "Selected Product"}</p>
+        ${draft ? `<p class="eyebrow">${getDraftProductLabel()}</p>` : ""}
         <h2>${escapeHtml(getProductDisplayTitle(product))}</h2>
       </div>
       <div class="row-actions ${draft ? "draft-actions" : ""}">
@@ -1990,6 +2100,7 @@ function renderEditor(product, calc) {
         .map((field) => renderProductField(product, field))
         .join("")}
     </div>
+    ${activeGroup === "Amazon" ? renderCommissionWaiverStatus(calc) : ""}
     ${renderCountryOptions()}
     ${renderDashboardFilter()}
     <div class="breakdown-grid" data-product-dashboard>
@@ -2015,6 +2126,22 @@ function renderEditor(product, calc) {
       ${breakdownItem("ROI Amazon Deal on product cost", percent(calc.roiProductCostAmazonDeal), "roi-product-cost")}
     </div>
     ${activeGroup === "Product" ? renderOrderHistory(product) : ""}
+  `;
+}
+
+function renderCommissionWaiverStatus(calc) {
+  const enabled = state.settings.amazonCommissionWaiverEnabled === true;
+  const threshold = currency(state.settings.amazonCommissionWaiverThresholdInr);
+  if (!enabled) {
+    return `<div class="commission-waiver-status">Commission waiver is off. The category commission applies to both prices.</div>`;
+  }
+
+  return `
+    <div class="commission-waiver-status active">
+      <strong>0% commission up to ${threshold}</strong>
+      <span>Selling price: ${percent(calc.amazonCommissionRate)}</span>
+      <span>Deal price: ${percent(calc.amazonDealCommissionRate)}</span>
+    </div>
   `;
 }
 
@@ -2198,10 +2325,6 @@ function updateProductLiveDashboard(product) {
         : "Unsaved changes";
     }
 
-    const filterCount = document.querySelector("[data-filter-count]");
-    if (filterCount) {
-      filterCount.textContent = getProductListCountLabel();
-    }
   }
 }
 
@@ -2227,6 +2350,18 @@ function bindEvents() {
       saveState();
       render();
     });
+  });
+
+  document.querySelectorAll("[data-calculator-freight]").forEach((input) => {
+    const updateTemporaryFreight = (event) => {
+      calculatorFreightPerKgUsd = safeNumber(event.currentTarget.value);
+      const product = getSelectedProduct();
+      if (product) {
+        updateProductLiveDashboard(product);
+      }
+    };
+    input.addEventListener("input", updateTemporaryFreight);
+    input.addEventListener("change", updateTemporaryFreight);
   });
 
   document.querySelectorAll("[data-master-setting]").forEach((input) => {
@@ -2335,21 +2470,18 @@ function applyProductFilter() {
 
   rows.forEach((row) => {
     const product = getListedProducts().find((item) => item.id === row.dataset.productRow);
-    const isVisible = product ? productMatchesSearch(product, query) : false;
+    const isVisible = Boolean(query) && (product ? productMatchesSearch(product, query) : false);
     row.hidden = !isVisible;
     if (isVisible) {
       visibleCount += 1;
     }
   });
 
-  const filterCount = document.querySelector("[data-filter-count]");
-  if (filterCount) {
-    filterCount.textContent = getProductListCountLabel(query ? visibleCount : undefined);
-  }
+  document.querySelector(".product-list")?.classList.toggle("search-idle", !query);
 
   const emptyState = document.querySelector("[data-filter-empty]");
   if (emptyState) {
-    emptyState.hidden = visibleCount > 0;
+    emptyState.hidden = !query || visibleCount > 0;
   }
 }
 
@@ -2795,8 +2927,13 @@ function updateSettingFromInput(input) {
 function updateMasterSettingFromInput(event) {
   ensureMasterDraft();
   const key = event.currentTarget.dataset.masterSetting;
-  masterDraft.settings[key] = safeNumber(event.currentTarget.value);
+  masterDraft.settings[key] = event.currentTarget.type === "checkbox"
+    ? event.currentTarget.checked
+    : safeNumber(event.currentTarget.value);
   masterDraftMessage = "";
+  if (event.currentTarget.type === "checkbox") {
+    render();
+  }
 }
 
 function handleMasterInput(event) {
@@ -2843,10 +2980,15 @@ function saveMasterDraft() {
 
   state.settings = {
     ...state.settings,
+    freightPerKgUsd: safeNumber(masterDraft.settings.freightPerKgUsd),
+    amazonCommissionWaiverEnabled: masterDraft.settings.amazonCommissionWaiverEnabled === true,
+    amazonCommissionWaiverThresholdInr:
+      safeNumber(masterDraft.settings.amazonCommissionWaiverThresholdInr) || 999,
     insuranceRate: safeNumber(masterDraft.settings.insuranceRate),
     swsRate: safeNumber(masterDraft.settings.swsRate),
     warehouseRate: safeNumber(masterDraft.settings.warehouseRate),
   };
+  calculatorFreightPerKgUsd = state.settings.freightPerKgUsd;
   state.commissionMaster = normalizeCommissionMaster(draftRows, state.products);
   state.commissionMaster.forEach((row) => {
     state.products
@@ -3073,10 +3215,6 @@ async function handleAction(action) {
     render();
   }
 
-  if (action === "export") {
-    exportCsv();
-  }
-
   if (action === "refresh-rate") {
     await refreshRate();
   }
@@ -3097,122 +3235,6 @@ async function refreshRate() {
     exchangeStatus = "Manual rate active";
   }
   render();
-}
-
-function exportCsv() {
-  const headers = [
-    "Product Name",
-    "Category",
-    "Design",
-    "Color",
-    "SKU",
-    "ASIN",
-    "EAN Code",
-    "HSN Code",
-    "Procurement Type",
-    "Product Cost Per Unit USD",
-    "Product Cost Per Unit INR",
-    "Weight of Product Per Unit in KG",
-    "Freight Per Unit in USD",
-    "Insurance Per unit USD",
-    "Country of Origin",
-    "COO Benefit",
-    "BCD Rate",
-    "Basic Custom Duty USD",
-    "BasicCustom Duty INR",
-    "SWS USD",
-    "SWS INR",
-    "GST Rate",
-    "IGST",
-    "IGST INR",
-    "Import Cost USD",
-    "Import Cost INR",
-    "Overhead Cost INR",
-    "Landing Cost till Warehouse INR",
-    "Amazon Selling Price",
-    "GST Amazon",
-    "Settlement Amazon",
-    "Profit Amazon",
-    "Deal Discount Percent",
-    "Deal Price INR",
-    "GST Amazon Deal",
-    "Commission on Amazon",
-    "FBA Pick Pack Fee INR",
-    "FBA Weight Handling Fee INR",
-    "Fixed Closing Fee INR",
-    "TDS TCS Deduction",
-    "Settlement Amazon Deal",
-    "Profit Amazon Deal",
-    "Margin Amazon",
-    "Margin Amazon Deal",
-    "ROI Amazon on Landing",
-    "ROI Amazon Deal on Landing",
-    "ROI Amazon on Product Cost",
-    "ROI Amazon Deal on Product Cost",
-  ];
-  const rows = state.products.map((product) => {
-    const calc = calculateProduct(product);
-    return [
-      product.productName,
-      product.category,
-      product.design,
-      product.color,
-      product.sku,
-      product.asin,
-      product.eanCode,
-      product.hsnCode,
-      normalizeProcurementType(product.procurementType),
-      product.productCostUsd,
-      calc.productCostInr,
-      product.weightKg,
-      calc.freightUsd,
-      calc.insuranceUsd,
-      product.countryOfOrigin,
-      product.cooBenefit,
-      product.bcdRate,
-      calc.basicCustomDutyUsd,
-      calc.basicCustomDutyInr,
-      calc.swsUsd,
-      calc.swsInr,
-      product.gstRate,
-      calc.igstUsd,
-      calc.igstInr,
-      calc.importCostUsd,
-      calc.importCostInr,
-      product.overheadCostInr,
-      calc.landingCostInr,
-      product.amazonSellingPriceInr,
-      calc.gstAmazonInr,
-      calc.settlementAmazonInr,
-      calc.amazonProfitInr,
-      product.dealPriceRate,
-      calc.dealPriceInr,
-      calc.gstAmazonDealInr,
-      product.commissionRate,
-      product.pickPackFeeInr,
-      product.weightHandlingFeeInr,
-      product.fixedClosingFeeInr,
-      product.tdsTcsRate,
-      calc.settlementAmazonDealInr,
-      calc.amazonDealProfitInr,
-      calc.marginAmazon,
-      calc.marginAmazonDeal,
-      calc.roiAmazon,
-      calc.roiAmazonDeal,
-      calc.roiProductCostAmazon,
-      calc.roiProductCostAmazonDeal,
-    ];
-  });
-  const csv = [headers, ...rows]
-    .map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(","))
-    .join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "custom-import-profit.csv";
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 function escapeHtml(value) {

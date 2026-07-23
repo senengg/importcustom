@@ -174,16 +174,19 @@ function render() {
     <main class="shell invoice-register-shell">
       <header class="app-header">
         <div class="brand-lockup">
-          <img class="brand-mark" src="import-profit-mark.png" alt="" />
+          <img class="brand-mark" src="/import-profit-mark.png" alt="" />
           <div>
-            <p class="eyebrow">Import and Profit App</p>
-            <h1>Invoice Register</h1>
+            <p class="eyebrow">Import and Profit</p>
+            <strong class="sidebar-title">Workspace</strong>
           </div>
         </div>
         <div class="header-actions">
-          <a class="nav-link" href="index.html">Products</a>
+          <span class="sidebar-section-label">Workspace</span>
+          <a class="nav-link" href="index.html">Calculator</a>
+          <a class="nav-link" href="products.html">All Products</a>
           <a class="nav-link active" href="invoices.html">Invoices</a>
-          <a class="nav-link" href="master/">Master Data</a>
+          <a class="nav-link" href="master/index.html">Master Data</a>
+          <span class="sidebar-section-label">Actions</span>
           <label class="primary-button file-button" title="Upload order invoice locally">
             Upload Invoice
             <input
@@ -194,6 +197,14 @@ function render() {
           </label>
         </div>
       </header>
+
+      <section class="page-topbar">
+        <div>
+          <p class="page-kicker">Workspace / Invoices</p>
+          <h1>Invoice Register</h1>
+        </div>
+        <span class="page-status-pill">${sortedInvoices.length} invoice${sortedInvoices.length === 1 ? "" : "s"}</span>
+      </section>
 
       <section class="invoice-summary-grid">
         <div class="invoice-summary-card">

@@ -7,7 +7,7 @@ const outputDirectory = "dist";
 await fs.rm(outputDirectory, { recursive: true, force: true });
 await fs.mkdir(outputDirectory, { recursive: true });
 
-for (const file of ["index.html", "master.html", "admin.html", "invoices.html", "import-profit-mark.png"]) {
+for (const file of ["index.html", "master.html", "admin.html", "invoices.html", "products.html", "import-profit-mark.png"]) {
   await fs.copyFile(file, `${outputDirectory}/${file}`);
 }
 

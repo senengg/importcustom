@@ -28,6 +28,10 @@
       "destination": "/admin.html"
     },
     {
+      "source": "/products",
+      "destination": "/products.html"
+    },
+    {
       "source": "/((?!api/.*).*)",
       "destination": "/index.html"
     }

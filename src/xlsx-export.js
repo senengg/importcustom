@@ -30,6 +30,7 @@ function cellXml(value, rowIndex, columnIndex, header = false) {
 }
 
 function createWorksheet(rows) {
+  const maximumColumns = Math.max(1, ...rows.map((row) => row.length));
   const rowXml = rows.map((row, rowOffset) => {
     const rowIndex = rowOffset + 1;
     const highlighted = rowIndex === 1 || String(row[0] || "").startsWith("TOTAL INVOICE VALUE");
@@ -41,15 +42,10 @@ function createWorksheet(rows) {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <cols>
-    <col min="1" max="1" width="28" customWidth="1"/>
-    <col min="2" max="2" width="24" customWidth="1"/>
-    <col min="3" max="4" width="24" customWidth="1"/>
-    <col min="5" max="5" width="18" customWidth="1"/>
-    <col min="6" max="6" width="12" customWidth="1"/>
-    <col min="7" max="8" width="18" customWidth="1"/>
+    <col min="1" max="${maximumColumns}" width="20" customWidth="1"/>
   </cols>
   <sheetData>${rowXml}</sheetData>
-  <autoFilter ref="A1:G${Math.max(rows.length, 1)}"/>
+  <autoFilter ref="A1:${columnName(maximumColumns - 1)}${Math.max(rows.length, 1)}"/>
 </worksheet>`;
 }
 
@@ -125,6 +121,18 @@ function createZip(files) {
   });
 }
 
+function createWorkbook(rows, sheetName) {
+  const safeSheetName = String(sheetName || "Sheet1").replace(/[\[\]:*?\/\\]/g, " ").slice(0, 31);
+  return createZip([
+    ["[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+    ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${escapeXml(safeSheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+    ["xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF007C77"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs></styleSheet>`],
+    ["xl/worksheets/sheet1.xml", createWorksheet(rows)],
+  ]);
+}
+
 export function createInvoiceWorkbook(invoice, productBySku, normalizeSku) {
   const headers = ["SKU", "Product Name", "Design", "Color", "ASIN", "Qty", "Price (USD)", "Total Price (USD)"];
   let totalQuantity = 0;
@@ -154,14 +162,74 @@ export function createInvoiceWorkbook(invoice, productBySku, normalizeSku) {
   totalInvoiceValue = Math.round(totalInvoiceValue * 100) / 100;
   rows.push(["TOTAL INVOICE VALUE", "", "", "", "", totalQuantity, "", totalInvoiceValue]);
 
-  return createZip([
-    ["[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
-    ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
-    ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Invoice Details" sheetId="1" r:id="rId1"/></sheets></workbook>`],
-    ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
-    ["xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF007C77"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs></styleSheet>`],
-    ["xl/worksheets/sheet1.xml", createWorksheet([headers, ...rows])],
-  ]);
+  return createWorkbook([headers, ...rows], "Invoice Details");
+}
+
+export function createProductWorkbook(products, getMetrics) {
+  const headers = [
+    "Product Name",
+    "Category",
+    "Design",
+    "Color",
+    "SKU",
+    "ASIN",
+    "EAN Code",
+    "HSN Code",
+    "Procurement Type",
+    "Product Cost USD",
+    "Product Cost INR",
+    "Weight KG",
+    "Country of Origin",
+    "COO Benefit",
+    "BCD Rate",
+    "GST Rate",
+    "Selling Price INR",
+    "Deal Discount Percent",
+    "Deal Price INR",
+    "Amazon Profit INR",
+    "Amazon Deal Profit INR",
+    "Lifetime Ordered Quantity",
+  ];
+  const rows = products.map((product) => {
+    const metrics = getMetrics(product);
+    return [
+      product.productName || "",
+      product.category || "",
+      product.design || "",
+      product.color || "",
+      product.sku || "",
+      product.asin || "",
+      product.eanCode || "",
+      product.hsnCode || "",
+      product.procurementType || "",
+      Number(product.productCostUsd) || 0,
+      Number(product.productCostInr) || 0,
+      Number(product.weightKg) || 0,
+      product.countryOfOrigin || "",
+      product.cooBenefit || "",
+      Number(product.bcdRate) || 0,
+      Number(product.gstRate) || 0,
+      Number(product.amazonSellingPriceInr) || 0,
+      (Number(product.dealPriceRate) || 0) * 100,
+      Number(metrics.dealPrice) || 0,
+      Number(metrics.amazonProfit) || 0,
+      Number(metrics.amazonDealProfit) || 0,
+      Number(metrics.lifetimeOrderedQuantity) || 0,
+    ];
+  });
+  return createWorkbook([headers, ...rows], "Filtered Products");
+}
+
+export function downloadProductWorkbook(products, getMetrics) {
+  const blob = createProductWorkbook(products, getMetrics);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `Filtered-Products-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function downloadInvoiceWorkbook(invoice, productBySku, normalizeSku) {

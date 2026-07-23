@@ -7,18 +7,21 @@ import {
   calculateSellingPriceFromDeal,
 } from "../src/pricing.js";
 import { parseOrderInvoiceRows } from "../src/invoice-orders.js";
-import { createInvoiceWorkbook } from "../src/xlsx-export.js";
+import { createInvoiceWorkbook, createProductWorkbook } from "../src/xlsx-export.js";
 
 const requiredFiles = [
   "index.html",
   "master.html",
   "admin.html",
   "invoices.html",
+  "products.html",
   "master/index.html",
   "src/app.js",
   "src/pricing.js",
   "src/invoice-orders.js",
   "src/invoices.js",
+  "src/products.js",
+  "src/product-upload.js",
   "src/xlsx-reader.js",
   "src/xlsx-export.js",
   "src/styles.css",
@@ -55,6 +58,8 @@ const adminAppSource = await fs.readFile(path.join("src", "admin.js"), "utf8");
 const usersApiSource = await fs.readFile(path.join("api", "users.js"), "utf8");
 const invoicePageSource = await fs.readFile("invoices.html", "utf8");
 const invoiceAppSource = await fs.readFile(path.join("src", "invoices.js"), "utf8");
+const productsAppSource = await fs.readFile(path.join("src", "products.js"), "utf8");
+const productUploadSource = await fs.readFile(path.join("src", "product-upload.js"), "utf8");
 const formulaChecks = [
   "freightPerKgUsd) * weightKg",
   "safeNumber(settings.insuranceRate) / 100",
@@ -77,9 +82,11 @@ const formulaChecks = [
   "[\"productCostInr\", \"India product cost / unit\", \"number\", \"INR\"]",
   "domesticProduct ? 0 : safeNumber(product.productCostUsd)",
   "domesticProduct ? productCostInr : importCostUsd * usdRate",
-  "Product Cost Per Unit INR",
   "gstRate / (100 + gstRate)",
-  "safeNumber(product.commissionRate) * priceInr",
+  "getEffectiveAmazonCommissionRate(priceInr, product, settings)",
+  "amazonCommissionWaiverEnabled",
+  "amazonCommissionWaiverThresholdInr",
+  "renderAmazonCommissionWaiverSection()",
   "dealPriceRate",
   "[\"dealPriceRate\", \"Deal discount %\", \"percentDecimal\", \"%\"]",
   "[\"dealPriceInr\", \"Deal price\", \"number\", \"INR\"]",
@@ -94,7 +101,7 @@ const formulaChecks = [
   "function formatTwoDecimalPricingInput(input)",
   ".toFixed(2)",
   "calculateDealPriceFromSelling(",
-  "calculateAmazonAmounts(dealPriceInr",
+  "const amazonDealAmounts = calculateAmazonAmounts(",
   "amazonProfitInr",
   "amazonDealProfitInr",
   "gstAmazonInr",
@@ -142,6 +149,7 @@ const formulaChecks = [
   "renderCommissionMaster()",
   "renderMasterDataPage()",
   "renderCategoryCommissionSection()",
+  "renderFreightSection()",
   "data-master-category-select",
   "getSelectedCommissionRow()",
   "renderInsuranceSection()",
@@ -150,6 +158,7 @@ const formulaChecks = [
   "renderMasterPlaceholderSection",
   "data-action=\"save-master\"",
   "data-master-setting",
+  "data-calculator-freight",
   "saveMasterDraft()",
   "Category Commission",
   "applyCommissionForProductCategory(product)",
@@ -158,13 +167,12 @@ const formulaChecks = [
   "[\"countryOfOrigin\", \"Country of origin\", \"country\"]",
   "[\"bcdRate\", \"BCD rate\", \"number\", \"%\"]",
   "countryOfOrigin: getLatestCountryOfOrigin()",
-  "data-product-upload",
   "ORDER_HISTORY_STORAGE_KEY",
   "custom-import-profit-order-history-v1",
   "parseOrderInvoiceRows(rows, file.name)",
   "Invoice ${parsedInvoice.invoiceNumber} was already uploaded",
-  "Saved only in this browser. Nothing in this section is uploaded to the cloud.",
   "Lifetime ordered quantity",
+  "No. of invoices:",
   "removeLocalInvoice",
   "data-product-list-scroll",
   "function restoreProductListScroll(productListScrollTop)",
@@ -210,7 +218,7 @@ const formulaChecks = [
   "Users & Logs",
   "saveCloudStateNow()",
   "data-sync-control",
-  "href=\"master/\"",
+  "href=\"master/index.html\"",
 ];
 
 assert.equal(calculateSellingPriceFromDeal(900, 0.1), 1000);
@@ -311,6 +319,44 @@ for (const expected of [
 for (const formula of formulaChecks) {
   if (!appSource.includes(formula)) {
     throw new Error(`Formula check failed: ${formula}`);
+  }
+}
+
+for (const expected of [
+  "data-catalog-upload",
+  "data-catalog-download",
+  "handleCatalogUpload",
+  "handleCatalogDownload",
+  "const visibleProducts = getVisibleProducts();",
+  "importProductRows(rows, stateDocument)",
+  "downloadProductWorkbook(visibleProducts",
+  "updated from Excel",
+]) {
+  if (!productsAppSource.includes(expected)) {
+    throw new Error(`Product catalogue upload check failed: ${expected}`);
+  }
+}
+
+const productWorkbookFixture = createProductWorkbook(
+  [{ productName: "Filtered product", sku: "FILTER-1", amazonSellingPriceInr: 999 }],
+  () => ({
+    dealPrice: 899,
+    amazonProfit: 200,
+    amazonDealProfit: 150,
+    lifetimeOrderedQuantity: 12,
+  }),
+);
+assert.equal(productWorkbookFixture.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+assert.ok(productWorkbookFixture.size > 1000);
+
+for (const expected of [
+  "uploadHeaderAliases",
+  "findMatchingProduct",
+  "Excel row for",
+  "calculateSellingPriceFromDeal",
+]) {
+  if (!productUploadSource.includes(expected)) {
+    throw new Error(`Product upload module check failed: ${expected}`);
   }
 }
 
