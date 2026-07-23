@@ -223,6 +223,7 @@ function filterOptions(field, allLabel) {
 }
 
 function renderSidebar() {
+  const connected = navigator.onLine && cloudSyncEnabled;
   return `
     <header class="app-header">
       <div class="brand-lockup">
@@ -239,6 +240,10 @@ function renderSidebar() {
         <a class="nav-link" href="invoices.html">Invoices</a>
         <a class="nav-link" href="master/index.html">Master Data</a>
         ${currentUser?.role === "admin" ? `<a class="nav-link" href="/admin">Users & Logs</a>` : ""}
+        <span class="sync-control connection-status ${connected ? "synced" : "error"}" data-connection-indicator>
+          <span class="sync-dot" aria-hidden="true"></span>
+          <span data-connection-label>${connected ? "Online" : "Offline"}</span>
+        </span>
         <span class="sidebar-section-label account-section-label">Account</span>
         <span class="account-chip" title="${escapeAttribute(currentUser?.email || "")}">
           <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
@@ -633,3 +638,16 @@ app.innerHTML = `
   </main>
 `;
 initialize();
+
+window.addEventListener("offline", updateConnectionIndicator);
+window.addEventListener("online", updateConnectionIndicator);
+
+function updateConnectionIndicator() {
+  const connected = navigator.onLine && cloudSyncEnabled;
+  const indicator = document.querySelector("[data-connection-indicator]");
+  const label = document.querySelector("[data-connection-label]");
+  if (indicator) {
+    indicator.className = `sync-control connection-status ${connected ? "synced" : "error"}`;
+  }
+  if (label) label.textContent = connected ? "Online" : "Offline";
+}

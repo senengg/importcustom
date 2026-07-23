@@ -381,11 +381,12 @@ function setSyncStatus(label, tone, title) {
   syncStatusTitle = title || label;
   const control = document.querySelector("[data-sync-control]");
   const text = document.querySelector("[data-sync-status]");
+  const connected = navigator.onLine && tone !== "error";
   if (control) {
-    control.className = `sync-control ${tone}`;
+    control.className = `sync-control connection-status ${connected ? "synced" : "error"}`;
     control.title = syncStatusTitle;
   }
-  if (text) text.textContent = label;
+  if (text) text.textContent = connected ? "Online" : "Offline";
 }
 
 async function requestApi(path, { method = "GET", body } = {}) {
@@ -1670,19 +1671,20 @@ function renderHeader(page) {
 }
 
 function renderSyncControl() {
+  const connected = navigator.onLine && syncStatusTone !== "error";
   return `
     ${currentUser?.role === "admin" ? `<a class="nav-link" href="/admin">Users & Logs</a>` : ""}
-    <span class="sidebar-section-label account-section-label">Account</span>
     <button
-      class="sync-control sidebar-sync-control ${syncStatusTone}"
+      class="sync-control connection-status ${connected ? "synced" : "error"}"
       data-action="sync"
       data-sync-control
       type="button"
       title="${escapeAttribute(syncStatusTitle)}"
     >
       <span class="sync-dot" aria-hidden="true"></span>
-      <span data-sync-status>${escapeHtml(syncStatus)}</span>
+      <span data-sync-status>${connected ? "Online" : "Offline"}</span>
     </button>
+    <span class="sidebar-section-label account-section-label">Account</span>
     <span class="account-chip" title="${escapeAttribute(currentUser?.email || "")}">
       <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
       <small>${escapeHtml(currentUser?.role || "")}</small>
@@ -3251,3 +3253,11 @@ function escapeAttribute(value) {
 
 render();
 initializeAuth();
+
+window.addEventListener("offline", () => {
+  setSyncStatus("Offline", "error", "The app is offline.");
+});
+
+window.addEventListener("online", () => {
+  if (currentUser) initializeAuthenticatedCloudSync();
+});

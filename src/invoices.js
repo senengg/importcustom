@@ -200,6 +200,10 @@ function render() {
           <a class="nav-link active" href="invoices.html">Invoices</a>
           <a class="nav-link" href="master/index.html">Master Data</a>
           ${currentUser?.role === "admin" ? `<a class="nav-link" href="/admin">Users & Logs</a>` : ""}
+          <span class="sync-control connection-status ${navigator.onLine ? "synced" : "error"}" data-connection-indicator>
+            <span class="sync-dot" aria-hidden="true"></span>
+            <span data-connection-label>${navigator.onLine ? "Online" : "Offline"}</span>
+          </span>
           <span class="sidebar-section-label account-section-label">Account</span>
           <span class="account-chip" title="${escapeHtml(currentUser?.email || "")}">
             <strong>${escapeHtml(currentUser?.full_name || currentUser?.email || "User")}</strong>
@@ -315,6 +319,18 @@ async function logout() {
   await request("/api/auth/logout", { method: "POST" }).catch(() => null);
   window.location.replace("/");
 }
+
+function updateConnectionIndicator() {
+  const indicator = document.querySelector("[data-connection-indicator]");
+  const label = document.querySelector("[data-connection-label]");
+  if (indicator) {
+    indicator.className = `sync-control connection-status ${navigator.onLine ? "synced" : "error"}`;
+  }
+  if (label) label.textContent = navigator.onLine ? "Online" : "Offline";
+}
+
+window.addEventListener("online", updateConnectionIndicator);
+window.addEventListener("offline", updateConnectionIndicator);
 
 function downloadInvoice(event) {
   const invoice = invoices.find((item) => item.id === event.currentTarget.dataset.downloadInvoice);

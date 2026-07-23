@@ -71,9 +71,13 @@ function render() {
           <a class="nav-link" href="/">Calculator</a>
           <a class="nav-link" href="/products.html">All Products</a>
           <a class="nav-link" href="/invoices.html">Invoices</a>
-          <a class="nav-link" href="/master">Master Data</a>
-          <a class="nav-link active" href="/admin">Users & Logs</a>
-          <span class="sidebar-section-label account-section-label">Account</span>
+        <a class="nav-link" href="/master">Master Data</a>
+        <a class="nav-link active" href="/admin">Users & Logs</a>
+        <span class="sync-control connection-status ${navigator.onLine ? "synced" : "error"}" data-connection-indicator>
+          <span class="sync-dot" aria-hidden="true"></span>
+          <span data-connection-label>${navigator.onLine ? "Online" : "Offline"}</span>
+        </span>
+        <span class="sidebar-section-label account-section-label">Account</span>
           <span class="account-chip"><strong>${escapeHtml(currentUser.full_name)}</strong><small>${escapeHtml(currentUser.role)}</small></span>
           <button class="ghost-button compact sidebar-logout" data-admin-logout type="button">Logout</button>
         </nav>
@@ -129,6 +133,18 @@ async function logout() {
   await request("/api/auth/logout", { method: "POST" }).catch(() => null);
   window.location.replace("/");
 }
+
+function updateConnectionIndicator() {
+  const indicator = document.querySelector("[data-connection-indicator]");
+  const label = document.querySelector("[data-connection-label]");
+  if (indicator) {
+    indicator.className = `sync-control connection-status ${navigator.onLine ? "synced" : "error"}`;
+  }
+  if (label) label.textContent = navigator.onLine ? "Online" : "Offline";
+}
+
+window.addEventListener("online", updateConnectionIndicator);
+window.addEventListener("offline", updateConnectionIndicator);
 
 function renderRecoveryPanel() {
   if (!recovery?.available) return "";

@@ -1901,8 +1901,21 @@ body {
   color: var(--sidebar-muted);
 }
 
-.sidebar-sync-control {
-  display: none !important;
+.app-header .connection-status {
+  display: inline-flex;
+  pointer-events: none;
+}
+
+.app-header button.connection-status {
+  pointer-events: auto;
+}
+
+.app-header .connection-status.synced {
+  color: #73dca4;
+}
+
+.app-header .connection-status.synced .sync-dot {
+  background: #53ce89;
 }
 
 .app-header .sidebar-logout {
