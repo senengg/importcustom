@@ -1571,7 +1571,6 @@ function render() {
           <a class="nav-link" href="products.html">All Products</a>
           <a class="nav-link" href="invoices.html">Invoices</a>
           <a class="nav-link" href="master/index.html">Master Data</a>
-          <button class="ghost-button" data-action="reset" type="button">Reset</button>
           ${renderSyncControl()}
         </div>
       </header>
@@ -3194,23 +3193,6 @@ async function handleAction(action) {
     resetProductDraft();
     state.products = state.products.filter((product) => product.id !== productIdToDelete);
     selectedProductId = state.products[0]?.id ?? null;
-    saveState();
-    render();
-  }
-
-  if (action === "reset") {
-    state = {
-      settings: { ...defaultSettings, dashboardCards: [...defaultDashboardCards] },
-      commissionMaster: cloneDefaultCommissionMaster(),
-      products: defaultProducts.map((product) => normalizeProduct({ ...product, id: crypto.randomUUID() })),
-    };
-    selectedProductId = state.products[0].id;
-    resetProductDraft();
-    activeGroup = "Product";
-    exchangeStatus = "";
-    productSaveMessage = "";
-    uploadStatus = "";
-    uploadStatusTone = "";
     saveState();
     render();
   }

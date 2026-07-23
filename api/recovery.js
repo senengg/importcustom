@@ -63,6 +63,14 @@ async function getRecoveryCandidate(session) {
   });
   const products = uniqueDeletedProducts(resetDeleteLogs);
   const times = resetDeleteLogs.map((log) => timestamp(log.created_at)).filter(Boolean);
+  const currentProducts = Array.isArray(document?.state?.products)
+    ? document.state.products
+    : [];
+  const currentProductIds = new Set(currentProducts.map((product) => product?.id).filter(Boolean));
+  const alreadyRestored =
+    products.length > 0 &&
+    currentProducts.length === products.length &&
+    products.every((product) => currentProductIds.has(product.id));
 
   return {
     document,
@@ -74,12 +82,12 @@ async function getRecoveryCandidate(session) {
         document &&
         settingsLog?.old_data &&
         commissionLog?.old_data &&
-        products.length,
+        products.length &&
+        !alreadyRestored,
       ),
       productCount: products.length,
-      currentProductCount: Array.isArray(document?.state?.products)
-        ? document.state.products.length
-        : 0,
+      currentProductCount: currentProducts.length,
+      alreadyRestored,
       currentVersion: Number(document?.version || 0),
       startedAt: times.length ? new Date(Math.min(...times)).toISOString() : null,
       completedAt: anchorTime ? new Date(anchorTime).toISOString() : null,

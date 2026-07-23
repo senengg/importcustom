@@ -106,4 +106,9 @@ assert.deepEqual(workspaceDocument.state.settings, previousSettings);
 assert.deepEqual(workspaceDocument.state.commissionMaster, previousCommissionMaster);
 assert.deepEqual(workspaceDocument.state.products, deletedProducts);
 
+const completedPreview = await invoke("GET");
+assert.equal(completedPreview.statusCode, 200);
+assert.equal(completedPreview.body.available, false);
+assert.equal(completedPreview.body.alreadyRestored, true);
+
 console.log("Reset recovery API verified.");
