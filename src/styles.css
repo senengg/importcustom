@@ -1416,6 +1416,28 @@ tbody tr:hover {
   }
 }
 
+.recovery-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 14px;
+  border-color: #f0c36c;
+  background: #fffaf0;
+}
+
+.recovery-panel h2 {
+  margin-top: 2px;
+}
+
+.recovery-samples {
+  max-width: 900px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
 @media (max-width: 1300px) {
   .app-header {
     align-items: flex-start;

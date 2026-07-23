@@ -3,6 +3,8 @@ let currentUser = null;
 let users = [];
 let logs = [];
 let message = "";
+let recovery = null;
+let recoveryMessage = "";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -93,6 +95,8 @@ function render() {
         </article>
       </section>
 
+      ${renderRecoveryPanel()}
+
       <section class="admin-panel activity-panel">
         <div class="section-title"><div><h2>Activity log</h2><p class="section-note">Activity is retained for one month. Times are shown in IST.</p></div><button class="ghost-button compact" data-refresh-logs>Refresh</button></div>
         <div class="activity-list">
@@ -103,6 +107,27 @@ function render() {
   `;
   document.querySelector("[data-invite-form]")?.addEventListener("submit", inviteUser);
   document.querySelector("[data-refresh-logs]")?.addEventListener("click", loadData);
+  document.querySelector("[data-restore-workspace]")?.addEventListener("click", restoreWorkspace);
+}
+
+function renderRecoveryPanel() {
+  if (!recovery?.available) return "";
+  const products = recovery.sampleProducts
+    .map((product) => [product.productName, product.design].filter(Boolean).join(" "))
+    .filter(Boolean)
+    .join(", ");
+  return `
+    <section class="admin-panel recovery-panel">
+      <div>
+        <p class="eyebrow">Reset recovery available</p>
+        <h2>${recovery.productCount} products can be restored</h2>
+        <p class="section-note">This will replace the current ${recovery.currentProductCount} products with the records saved immediately before Reset.</p>
+        ${products ? `<p class="recovery-samples">Sample: ${escapeHtml(products)}</p>` : ""}
+        ${recoveryMessage ? `<p class="admin-message">${escapeHtml(recoveryMessage)}</p>` : ""}
+      </div>
+      <button class="primary-button" data-restore-workspace type="button">Restore products</button>
+    </section>
+  `;
 }
 
 async function loadData() {
@@ -113,12 +138,43 @@ async function loadData() {
       return;
     }
     currentUser = session.user;
-    const [userData, logData] = await Promise.all([request("/api/users"), request("/api/logs")]);
+    const [userData, logData, recoveryData] = await Promise.all([
+      request("/api/users"),
+      request("/api/logs"),
+      request("/api/recovery"),
+    ]);
     users = userData.users || [];
     logs = logData.logs || [];
+    recovery = recoveryData;
     render();
   } catch {
     window.location.replace("/");
+  }
+}
+
+async function restoreWorkspace() {
+  if (!recovery?.available) return;
+  const confirmed = window.confirm(
+    `Restore ${recovery.productCount} products saved immediately before Reset? This will replace the current workspace products.`,
+  );
+  if (!confirmed) return;
+
+  recoveryMessage = "Restoring products…";
+  render();
+  try {
+    const result = await request("/api/recovery", {
+      method: "POST",
+      body: JSON.stringify({
+        confirm: true,
+        expectedProductCount: recovery.productCount,
+        expectedVersion: recovery.currentVersion,
+      }),
+    });
+    recoveryMessage = `${result.productCount} products restored.`;
+    await loadData();
+  } catch (error) {
+    recoveryMessage = error.message;
+    render();
   }
 }
 
