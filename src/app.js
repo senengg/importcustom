@@ -2099,7 +2099,7 @@ function renderEditor(product, calc) {
         .map((field) => renderProductField(product, field))
         .join("")}
     </div>
-    ${activeGroup === "Amazon" ? renderCommissionWaiverStatus(calc) : ""}
+    ${activeGroup === "Amazon" ? renderCommissionWaiverStatus() : ""}
     ${renderCountryOptions()}
     ${renderDashboardFilter()}
     <div class="breakdown-grid" data-product-dashboard>
@@ -2128,21 +2128,19 @@ function renderEditor(product, calc) {
   `;
 }
 
-function renderCommissionWaiverStatus(calc) {
+function renderCommissionWaiverStatus() {
   const enabled = state.settings.amazonCommissionWaiverEnabled === true;
   const threshold = currency(state.settings.amazonCommissionWaiverThresholdInr);
   if (!enabled) {
     return `<div class="commission-waiver-status">Commission waiver is off. The category commission applies to both prices.</div>`;
   }
 
-  return `
-    <div class="commission-waiver-status active">
-      <strong>0% commission up to ${threshold}</strong>
-      <span>Selling price: ${percent(calc.amazonCommissionRate)}</span>
-      <span>Deal price: ${percent(calc.amazonDealCommissionRate)}</span>
-    </div>
-  `;
-}
+    return `
+      <div class="commission-waiver-status active">
+        <strong>0% commission up to ${threshold}</strong>
+      </div>
+    `;
+  }
 
 function shouldRenderProductField(product, [key]) {
   if (key === "productCostUsd") return !isIndiaProcurement(product);
