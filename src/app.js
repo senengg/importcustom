@@ -1,4 +1,8 @@
-import { calculateDealPriceFromSelling, calculateSellingPriceFromDeal } from "./pricing.js";
+import {
+  calculateDealPriceFromSelling,
+  calculateDealRateFromPrices,
+  calculateSellingPriceFromDeal,
+} from "./pricing.js";
 import { normalizeInvoiceIdentifier, parseOrderInvoiceRows } from "./invoice-orders.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
@@ -1138,11 +1142,14 @@ function syncDealPriceFromRate(product) {
   return true;
 }
 
-function syncSellingPriceFromDeal(product) {
-  const sellingPrice = calculateSellingPriceFromDeal(product.dealPriceInr, product.dealPriceRate);
-  if (sellingPrice === null) return false;
+function syncDealRateFromPrice(product) {
+  const dealPriceRate = calculateDealRateFromPrices(
+    product.amazonSellingPriceInr,
+    product.dealPriceInr,
+  );
+  if (dealPriceRate === null) return false;
 
-  product.amazonSellingPriceInr = sellingPrice;
+  product.dealPriceRate = dealPriceRate;
   return true;
 }
 
@@ -2892,7 +2899,9 @@ function handleProductInput(event) {
     updateDealLinkedFields(product, key);
   } else if (key === "dealPriceInr") {
     product.dealPriceInr = safeNumber(event.currentTarget.value);
-    syncSellingPriceFromDeal(product);
+    if (!syncDealRateFromPrice(product)) {
+      pricingMessage = "Deal price must be greater than 0 and cannot exceed selling price.";
+    }
     updateDealLinkedFields(product, key);
   } else if (percentFields.has(key)) {
     product[key] = safeNumber(event.currentTarget.value) / 100;

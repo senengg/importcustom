@@ -20,3 +20,19 @@ export function calculateDealPriceFromSelling(sellingPriceInr, dealPriceRate) {
   const normalizedSellingPrice = Number.isFinite(sellingPrice) ? sellingPrice : 0;
   return Math.round((normalizedSellingPrice * (1 - discountRate)) * 100) / 100;
 }
+
+export function calculateDealRateFromPrices(sellingPriceInr, dealPriceInr) {
+  const sellingPrice = Number(sellingPriceInr);
+  const dealPrice = Number(dealPriceInr);
+  if (
+    !Number.isFinite(sellingPrice) ||
+    !Number.isFinite(dealPrice) ||
+    sellingPrice <= 0 ||
+    dealPrice <= 0 ||
+    dealPrice > sellingPrice
+  ) {
+    return null;
+  }
+
+  return (sellingPrice - dealPrice) / sellingPrice;
+}

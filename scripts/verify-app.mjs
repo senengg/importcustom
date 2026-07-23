@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import assert from "node:assert/strict";
-import { calculateDealPriceFromSelling, calculateSellingPriceFromDeal } from "../src/pricing.js";
+import {
+  calculateDealPriceFromSelling,
+  calculateDealRateFromPrices,
+  calculateSellingPriceFromDeal,
+} from "../src/pricing.js";
 import { parseOrderInvoiceRows } from "../src/invoice-orders.js";
 import { createInvoiceWorkbook } from "../src/xlsx-export.js";
 
@@ -80,7 +84,7 @@ const formulaChecks = [
   "[\"dealPriceRate\", \"Deal discount %\", \"percentDecimal\", \"%\"]",
   "[\"dealPriceInr\", \"Deal price\", \"number\", \"INR\"]",
   "syncDealPriceFromRate(product)",
-  "syncSellingPriceFromDeal(product)",
+  "syncDealRateFromPrice(product)",
   "getUploadedSellingPrice(values)",
   "calculateSellingPriceFromDeal(",
   "const repairedSellingPrice = calculateSellingPriceFromDeal(",
@@ -215,6 +219,9 @@ assert.equal(calculateSellingPriceFromDeal(900, 1), null);
 assert.equal(calculateDealPriceFromSelling(1000, 0.1), 900);
 assert.equal(calculateDealPriceFromSelling(1998.82, 0.15), 1699);
 assert.equal(calculateDealPriceFromSelling(1000, 1), null);
+assert.equal(calculateDealRateFromPrices(1000, 900), 0.1);
+assert.ok(Math.abs(calculateDealRateFromPrices(1998.82, 1699) - 0.15) < 0.00001);
+assert.equal(calculateDealRateFromPrices(1000, 1100), null);
 
 const invoiceFixture = [
   ["Invoice:", "TEST-001"],
