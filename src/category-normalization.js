@@ -20,7 +20,8 @@ export function getCanonicalCategoryName(category) {
     .normalize("NFKC")
     .trim()
     .replace(/\s+/g, " ");
-  return canonicalCategoryNames.get(getCommissionCategoryKey(cleaned)) || cleaned;
+  return canonicalCategoryNames.get(getCommissionCategoryKey(cleaned))
+    || cleaned.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
 }
 
 export function getCanonicalCategoryFromRows(category, rows = []) {

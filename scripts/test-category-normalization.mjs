@@ -37,5 +37,9 @@ assert.equal(
   "Mobile Accessories",
 );
 assert.equal(getCanonicalCategoryName("  Camera   Lens Protector "), "Camera Lens Protector");
+assert.equal(getCanonicalCategoryName("storage pouch"), "Storage Pouch");
+assert.equal(getCanonicalCategoryName("Headphone cases & covers"), "Headphone Cases & Covers");
+assert.equal(getCanonicalCategoryName("GPS accessories"), "GPS Accessories");
+assert.equal(getCanonicalCategoryName("MagSafe accessories"), "MagSafe Accessories");
 
 console.log("Category normalization verified.");
