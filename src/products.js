@@ -320,7 +320,7 @@ function renderProductCard(product) {
         </div>
         <div>
           <span>Amazon profit</span>
-          <strong class="catalog-amazon-profit">${currency(metrics.amazonProfit)}</strong>
+          <strong class="catalog-profit ${metrics.amazonProfit >= 0 ? "positive" : "negative"}">${currency(metrics.amazonProfit)}</strong>
         </div>
         <div>
           <span>Deal price</span>
@@ -328,7 +328,7 @@ function renderProductCard(product) {
         </div>
         <div>
           <span>Amazon deal profit</span>
-          <strong class="catalog-amazon-deal-profit">${currency(metrics.amazonDealProfit)}</strong>
+          <strong class="catalog-profit ${metrics.amazonDealProfit >= 0 ? "positive" : "negative"}">${currency(metrics.amazonDealProfit)}</strong>
         </div>
         <div>
           <span>Lifetime ordered quantity</span>

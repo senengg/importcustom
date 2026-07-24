@@ -378,6 +378,8 @@ for (const expected of [
   "removeSelectedProducts",
   "filters.search = \"\";",
   "value=\"${escapeAttribute(filters.search)}\"",
+  'metrics.amazonProfit >= 0 ? "positive" : "negative"',
+  'metrics.amazonDealProfit >= 0 ? "positive" : "negative"',
 ]) {
   if (!productsAppSource.includes(expected)) {
     throw new Error(`Product catalogue upload check failed: ${expected}`);
@@ -526,6 +528,13 @@ if (!styleSource.includes("[hidden]") || !styleSource.includes("display: none !i
 
 if (!styleSource.includes("button:disabled")) {
   throw new Error("Disabled save button styling is missing.");
+}
+
+if (
+  !styleSource.includes(".catalog-card-foot .catalog-profit.positive") ||
+  !styleSource.includes(".catalog-card-foot .catalog-profit.negative")
+) {
+  throw new Error("Catalogue profit values must use positive and negative colours.");
 }
 
 if (!styleSource.includes("input:disabled") || !styleSource.includes("disabled-field")) {

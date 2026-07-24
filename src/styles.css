@@ -2661,12 +2661,12 @@ tbody tr:hover {
   font-size: 0.92rem;
 }
 
-.catalog-card-foot .catalog-amazon-profit {
+.catalog-card-foot .catalog-profit.positive {
   color: var(--green);
 }
 
-.catalog-card-foot .catalog-amazon-deal-profit {
-  color: #e48a18;
+.catalog-card-foot .catalog-profit.negative {
+  color: var(--rose);
 }
 
 .catalog-open {
