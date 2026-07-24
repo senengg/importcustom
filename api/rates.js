@@ -34,9 +34,9 @@ export default async function handler(request, response) {
       source: "frankfurter.app",
     });
   } catch (error) {
+    console.error("[rates]", { name: error?.name || "Error", message: error?.message || "Unknown error" });
     response.status(502).json({
       error: "Unable to refresh exchange rate.",
-      detail: error.message,
     });
   }
 }

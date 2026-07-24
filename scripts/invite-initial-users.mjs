@@ -1,11 +1,11 @@
 const configuration = {
   url: String(process.env.SUPABASE_URL || "").replace(/\/$/, ""),
-  serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  serviceKey: process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY,
   appUrl: process.env.APP_URL || "https://importcustom.vercel.app",
 };
 
 if (!configuration.url || !configuration.serviceKey) {
-  throw new Error("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before inviting users.");
+  throw new Error("Set SUPABASE_URL and SUPABASE_SECRET_KEY before inviting users.");
 }
 
 const users = [

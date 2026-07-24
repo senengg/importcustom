@@ -2,6 +2,7 @@ import {
   renderWorkspaceConnectionStatus,
   startWorkspaceConnectionMonitor,
 } from "./connection-status.js";
+import { clearSensitiveBrowserData } from "./browser-storage.js";
 
 const app = document.querySelector("#admin-app");
 let currentUser = null;
@@ -133,6 +134,7 @@ function render() {
 
 async function logout() {
   await request("/api/auth/logout", { method: "POST" }).catch(() => null);
+  clearSensitiveBrowserData();
   window.location.replace("/");
 }
 

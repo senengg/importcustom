@@ -1,4 +1,5 @@
 create extension if not exists pgcrypto;
+create extension if not exists pg_cron with schema pg_catalog;
 
 create table if not exists public.workspaces (
   id uuid primary key default gen_random_uuid(),
@@ -66,7 +67,7 @@ create index if not exists audit_logs_workspace_created_idx
 create or replace function public.create_profile_for_approved_user()
 returns trigger
 language plpgsql
-security definer set search_path = public
+security definer set search_path = ''
 as $$
 declare approved public.approved_users%rowtype;
 begin
@@ -89,29 +90,31 @@ create trigger on_auth_user_created
 alter table public.profiles enable row level security;
 alter table public.workspace_state enable row level security;
 alter table public.audit_logs enable row level security;
+alter table public.workspaces enable row level security;
+alter table public.approved_users enable row level security;
 
-create policy "members can read workspace profiles" on public.profiles
-for select to authenticated using (
-  workspace_id = (select workspace_id from public.profiles where id = auth.uid())
+drop policy if exists "members can read workspace profiles" on public.profiles;
+drop policy if exists "members can read shared state" on public.workspace_state;
+drop policy if exists "admins and editors can update shared state" on public.workspace_state;
+drop policy if exists "members can read audit logs" on public.audit_logs;
+
+revoke all on table public.workspaces from anon, authenticated;
+revoke all on table public.approved_users from anon, authenticated;
+revoke all on table public.profiles from anon, authenticated;
+revoke all on table public.workspace_state from anon, authenticated;
+revoke all on table public.audit_logs from anon, authenticated;
+revoke all on sequence public.audit_logs_id_seq from anon, authenticated;
+revoke execute on function public.create_profile_for_approved_user() from public, anon, authenticated;
+
+grant select on table public.workspaces to service_role;
+grant select, insert, update, delete on table public.approved_users to service_role;
+grant select, update on table public.profiles to service_role;
+grant select, insert, update on table public.workspace_state to service_role;
+grant select, insert, delete on table public.audit_logs to service_role;
+grant usage, select on sequence public.audit_logs_id_seq to service_role;
+
+select cron.schedule(
+  'purge-expired-import-profit-audit-logs',
+  '17 2 * * *',
+  $$delete from public.audit_logs where created_at < now() - interval '30 days'$$
 );
-
-create policy "members can read shared state" on public.workspace_state
-for select to authenticated using (
-  workspace_id = (select workspace_id from public.profiles where id = auth.uid())
-);
-
-create policy "admins and editors can update shared state" on public.workspace_state
-for all to authenticated using (
-  workspace_id = (select workspace_id from public.profiles where id = auth.uid())
-  and (select role from public.profiles where id = auth.uid()) in ('admin', 'editor')
-) with check (
-  workspace_id = (select workspace_id from public.profiles where id = auth.uid())
-  and (select role from public.profiles where id = auth.uid()) in ('admin', 'editor')
-);
-
-create policy "members can read audit logs" on public.audit_logs
-for select to authenticated using (
-  workspace_id = (select workspace_id from public.profiles where id = auth.uid())
-);
-
-revoke update, delete on public.audit_logs from anon, authenticated;

@@ -1,4 +1,13 @@
-import { insertAuditLog, readJsonBody, requireUser, sendJson, supabaseFetch } from "./_lib/supabase.js";
+import {
+  insertAuditLog,
+  logServerError,
+  readJsonBody,
+  requireJsonRequest,
+  requireTrustedOrigin,
+  requireUser,
+  sendJson,
+  supabaseFetch,
+} from "./_lib/supabase.js";
 
 function latestLoginTimestamp(profileTimestamp, authTimestamp) {
   const timestamps = [profileTimestamp, authTimestamp]
@@ -10,6 +19,9 @@ function latestLoginTimestamp(profileTimestamp, authTimestamp) {
 }
 
 export default async function handler(request, response) {
+  if (request.method === "POST" && (!requireTrustedOrigin(request, response) || !requireJsonRequest(request, response))) {
+    return;
+  }
   const session = await requireUser(request, response);
   if (!session) return;
   if (session.profile.role !== "admin") {
@@ -47,7 +59,7 @@ export default async function handler(request, response) {
       const email = String(body.email || "").trim().toLowerCase();
       const fullName = String(body.fullName || "").trim();
       const role = ["admin", "editor", "viewer"].includes(body.role) ? body.role : "viewer";
-      if (!email || !fullName) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !fullName || fullName.length > 120) {
         sendJson(response, 400, { error: "Name and email are required." });
         return;
       }
@@ -80,6 +92,12 @@ export default async function handler(request, response) {
     response.setHeader("Allow", "GET, POST");
     sendJson(response, 405, { error: "Method not allowed." });
   } catch (error) {
-    sendJson(response, 502, { error: "User management is temporarily unavailable.", detail: error.message });
+    logServerError("users", error);
+    const status = [400, 413].includes(error.status) ? error.status : 502;
+    sendJson(response, status, {
+      error: status === 413
+        ? "The invitation request is too large."
+        : (status === 400 ? "The invitation request is invalid." : "User management is temporarily unavailable."),
+    });
   }
 }

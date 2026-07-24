@@ -108,7 +108,7 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(port, () => {
+server.listen(port, "127.0.0.1", () => {
   console.log(`Custom Import Profit Calculator: http://localhost:${port}`);
   console.log(useCloudApi
     ? `Authentication and shared data: ${cloudOrigin}`
@@ -122,6 +122,9 @@ async function proxyCloudApi(request, response, url) {
       if (!value || ["host", "connection", "content-length"].includes(name.toLowerCase())) continue;
       headers.set(name, Array.isArray(value) ? value.join(", ") : value);
     }
+    headers.set("origin", cloudOrigin);
+    headers.set("referer", `${cloudOrigin}/`);
+    headers.set("sec-fetch-site", "same-origin");
 
     let body;
     if (!['GET', 'HEAD'].includes(request.method || "GET")) {
@@ -161,7 +164,6 @@ async function proxyCloudApi(request, response, url) {
     });
     response.end(JSON.stringify({
       error: "The local app could not reach the cloud service.",
-      detail: error.message,
     }));
   }
 }
@@ -197,7 +199,6 @@ async function handleRates(url, response) {
     response.end(
       JSON.stringify({
         error: "Unable to refresh exchange rate.",
-        detail: error.message,
       }),
     );
   }

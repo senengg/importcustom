@@ -1,6 +1,7 @@
 const ACCESS_COOKIE = "import_profit_access";
 const REFRESH_COOKIE = "import_profit_refresh";
 const MAX_BODY_BYTES = 1_000_000;
+const SAFE_FETCH_SITES = new Set(["same-origin", "none"]);
 
 export function sendJson(response, status, body) {
   response.setHeader("Cache-Control", "no-store");
@@ -9,20 +10,108 @@ export function sendJson(response, status, body) {
 
 export function getSupabaseConfiguration() {
   const url = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
-  const anonKey = process.env.SUPABASE_ANON_KEY;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const anonKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
+  const serviceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   return url && anonKey && serviceKey ? { url, anonKey, serviceKey } : null;
 }
 
+function parseJson(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const error = new Error("Request body must contain valid JSON.");
+    error.status = 400;
+    throw error;
+  }
+}
+
 export async function readJsonBody(request) {
-  if (request.body && typeof request.body === "object") return request.body;
-  if (typeof request.body === "string") return JSON.parse(request.body);
+  const declaredLength = Number(request.headers?.["content-length"] || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    const error = new Error("Request is too large.");
+    error.status = 413;
+    throw error;
+  }
+  if (request.body && typeof request.body === "object") {
+    const serialized = JSON.stringify(request.body);
+    if (Buffer.byteLength(serialized) > MAX_BODY_BYTES) {
+      const error = new Error("Request is too large.");
+      error.status = 413;
+      throw error;
+    }
+    return request.body;
+  }
+  if (typeof request.body === "string") {
+    if (Buffer.byteLength(request.body) > MAX_BODY_BYTES) {
+      const error = new Error("Request is too large.");
+      error.status = 413;
+      throw error;
+    }
+    return parseJson(request.body);
+  }
   let raw = "";
   for await (const chunk of request) {
     raw += chunk;
-    if (Buffer.byteLength(raw) > MAX_BODY_BYTES) throw new Error("Request is too large.");
+    if (Buffer.byteLength(raw) > MAX_BODY_BYTES) {
+      const error = new Error("Request is too large.");
+      error.status = 413;
+      throw error;
+    }
   }
-  return raw ? JSON.parse(raw) : {};
+  return raw ? parseJson(raw) : {};
+}
+
+function getRequestOrigin(request) {
+  const forwardedHost = String(request.headers?.["x-forwarded-host"] || "").split(",")[0].trim();
+  const host = forwardedHost || String(request.headers?.host || "").trim();
+  if (!host) return "";
+  const forwardedProto = String(request.headers?.["x-forwarded-proto"] || "").split(",")[0].trim();
+  const protocol = forwardedProto || (/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host) ? "http" : "https");
+  return `${protocol}://${host}`;
+}
+
+export function requireTrustedOrigin(request, response) {
+  if (["GET", "HEAD", "OPTIONS"].includes(String(request.method || "GET").toUpperCase())) return true;
+
+  const fetchSite = String(request.headers?.["sec-fetch-site"] || "").toLowerCase();
+  if (fetchSite && !SAFE_FETCH_SITES.has(fetchSite)) {
+    sendJson(response, 403, { error: "This request did not originate from the app." });
+    return false;
+  }
+
+  const suppliedOrigin = String(request.headers?.origin || "").replace(/\/$/, "");
+  if (suppliedOrigin) {
+    const configuredOrigin = String(process.env.APP_URL || "").replace(/\/$/, "");
+    const allowedOrigins = new Set([configuredOrigin].filter(Boolean));
+    if (!configuredOrigin || process.env.VERCEL_ENV !== "production") {
+      allowedOrigins.add(getRequestOrigin(request));
+    }
+    if (!allowedOrigins.has(suppliedOrigin)) {
+      sendJson(response, 403, { error: "This request did not originate from the app." });
+      return false;
+    }
+  } else if (!fetchSite && (process.env.VERCEL || process.env.NODE_ENV === "production")) {
+    sendJson(response, 403, { error: "The request origin could not be verified." });
+    return false;
+  }
+
+  return true;
+}
+
+export function requireJsonRequest(request, response) {
+  const contentType = String(request.headers?.["content-type"] || "").split(";")[0].trim().toLowerCase();
+  if (contentType === "application/json") return true;
+  if (!contentType && !process.env.VERCEL && process.env.NODE_ENV !== "production") return true;
+  sendJson(response, 415, { error: "Content-Type must be application/json." });
+  return false;
+}
+
+export function logServerError(context, error) {
+  console.error(`[${context}]`, {
+    name: error?.name || "Error",
+    status: Number(error?.status || 0) || undefined,
+    message: error?.message || "Unknown error",
+  });
 }
 
 function parseCookies(request) {
@@ -37,13 +126,13 @@ function parseCookies(request) {
 }
 
 function cookie(name, value, maxAge) {
-  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
 }
 
 export function setSessionCookies(response, session) {
   response.setHeader("Set-Cookie", [
     cookie(ACCESS_COOKIE, session.access_token, Math.max(60, Number(session.expires_in || 3600))),
-    cookie(REFRESH_COOKIE, session.refresh_token, 60 * 60 * 24 * 30),
+    cookie(REFRESH_COOKIE, session.refresh_token, 60 * 60 * 24),
   ]);
 }
 

@@ -1,10 +1,14 @@
 import {
   insertAuditLog,
+  logServerError,
   readJsonBody,
+  requireJsonRequest,
+  requireTrustedOrigin,
   requireUser,
   sendJson,
   supabaseFetch,
 } from "./_lib/supabase.js";
+import { validateState } from "./_lib/state-validation.js";
 
 const RECOVERY_WINDOW_MS = 10 * 60 * 1000;
 const MAX_RECOVERY_LOGS = 5_000;
@@ -104,6 +108,9 @@ async function getRecoveryCandidate(session) {
 }
 
 export default async function handler(request, response) {
+  if (request.method === "POST" && (!requireTrustedOrigin(request, response) || !requireJsonRequest(request, response))) {
+    return;
+  }
   const session = await requireUser(request, response);
   if (!session) return;
   if (session.profile.role !== "admin") {
@@ -149,6 +156,13 @@ export default async function handler(request, response) {
       commissionMaster: candidate.commissionLog.old_data,
       products: candidate.products,
     };
+    const validation = validateState(recoveredState);
+    if (!validation.valid) {
+      sendJson(response, 409, {
+        error: "The recovery snapshot contains invalid legacy data and cannot be restored safely.",
+      });
+      return;
+    }
     const currentVersion = Number(candidate.document.version || 0);
     const nextVersion = currentVersion + 1;
     const updatedAt = new Date().toISOString();
@@ -189,9 +203,12 @@ export default async function handler(request, response) {
       updatedAt,
     });
   } catch (error) {
-    sendJson(response, 502, {
-      error: "Workspace recovery is temporarily unavailable.",
-      detail: error.message,
+    logServerError("recovery", error);
+    const status = [400, 413].includes(error.status) ? error.status : 502;
+    sendJson(response, status, {
+      error: status === 413
+        ? "The recovery request is too large."
+        : (status === 400 ? "The recovery request is invalid." : "Workspace recovery is temporarily unavailable."),
     });
   }
 }

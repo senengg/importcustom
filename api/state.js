@@ -1,16 +1,14 @@
-import { insertAuditLogs, readJsonBody, requireUser, sendJson, supabaseFetch } from "./_lib/supabase.js";
-
-function isValidState(state) {
-  return Boolean(
-    state &&
-      typeof state === "object" &&
-      state.settings &&
-      typeof state.settings === "object" &&
-      Array.isArray(state.commissionMaster) &&
-      Array.isArray(state.products) &&
-      state.products.length <= 5_000,
-  );
-}
+import {
+  insertAuditLogs,
+  logServerError,
+  readJsonBody,
+  requireJsonRequest,
+  requireTrustedOrigin,
+  requireUser,
+  sendJson,
+  supabaseFetch,
+} from "./_lib/supabase.js";
+import { validateState } from "./_lib/state-validation.js";
 
 function productLabel(product) {
   return product?.productName || product?.sku || product?.asin || "Product";
@@ -56,6 +54,9 @@ async function getWorkspaceDocument(session) {
 }
 
 export default async function handler(request, response) {
+  if (request.method === "PUT" && (!requireTrustedOrigin(request, response) || !requireJsonRequest(request, response))) {
+    return;
+  }
   const session = await requireUser(request, response);
   if (!session) return;
 
@@ -76,8 +77,9 @@ export default async function handler(request, response) {
         return;
       }
       const body = await readJsonBody(request);
-      if (!isValidState(body.state)) {
-        sendJson(response, 400, { error: "The submitted app data is invalid." });
+      const validation = validateState(body.state);
+      if (!validation.valid) {
+        sendJson(response, 400, { error: "The submitted app data is invalid.", reason: validation.error });
         return;
       }
       const current = await getWorkspaceDocument(session);
@@ -132,6 +134,12 @@ export default async function handler(request, response) {
     response.setHeader("Allow", "GET, PUT");
     sendJson(response, 405, { error: "Method not allowed." });
   } catch (error) {
-    sendJson(response, 502, { error: "Shared data is temporarily unavailable.", detail: error.message });
+    logServerError("state", error);
+    const status = [400, 413].includes(error.status) ? error.status : 502;
+    sendJson(response, status, {
+      error: status === 413
+        ? "The submitted app data is too large."
+        : (status === 400 ? "The submitted app data is invalid." : "Shared data is temporarily unavailable."),
+    });
   }
 }

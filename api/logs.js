@@ -1,4 +1,4 @@
-import { requireUser, sendJson, supabaseFetch } from "./_lib/supabase.js";
+import { logServerError, requireUser, sendJson, supabaseFetch } from "./_lib/supabase.js";
 
 export default async function handler(request, response) {
   if (request.method !== "GET") {
@@ -21,6 +21,7 @@ export default async function handler(request, response) {
     );
     sendJson(response, 200, { logs, retentionDays: 30 });
   } catch (error) {
-    sendJson(response, 502, { error: "Activity logs are temporarily unavailable.", detail: error.message });
+    logServerError("logs", error);
+    sendJson(response, 502, { error: "Activity logs are temporarily unavailable." });
   }
 }

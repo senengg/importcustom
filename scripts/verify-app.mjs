@@ -8,6 +8,7 @@ import {
 } from "../src/pricing.js";
 import { parseOrderInvoiceRows } from "../src/invoice-orders.js";
 import { createInvoiceWorkbook, createProductWorkbook } from "../src/xlsx-export.js";
+import { calculateCatalogProductMetrics } from "../src/product-metrics.js";
 
 const requiredFiles = [
   "index.html",
@@ -17,6 +18,7 @@ const requiredFiles = [
   "products.html",
   "master/index.html",
   "src/app.js",
+  "src/browser-storage.js",
   "src/connection-status.js",
   "src/category-normalization.js",
   "src/pricing.js",
@@ -24,6 +26,7 @@ const requiredFiles = [
   "src/invoices.js",
   "src/products.js",
   "src/product-filters.js",
+  "src/product-metrics.js",
   "src/product-bulk-actions.js",
   "src/product-upload.js",
   "src/xlsx-reader.js",
@@ -40,7 +43,9 @@ const requiredFiles = [
   "api/users.js",
   "api/logs.js",
   "api/_lib/supabase.js",
+  "api/_lib/state-validation.js",
   "supabase/schema.sql",
+  "supabase/migrations/20260724090000_security_hardening.sql",
   "src/admin.js",
   "scripts/invite-initial-users.mjs",
   "import-profit-mark.png",
@@ -379,17 +384,72 @@ for (const expected of [
   }
 }
 
-const productWorkbookFixture = createProductWorkbook(
-  [{ productName: "Filtered product", sku: "FILTER-1", amazonSellingPriceInr: 999 }],
-  () => ({
-    dealPrice: 899,
-    amazonProfit: 200,
-    amazonDealProfit: 150,
-    lifetimeOrderedQuantity: 12,
-  }),
-);
+const exportProduct = {
+  productName: "Filtered product",
+  sku: "FILTER-1",
+  procurementType: "Import",
+  productCostUsd: 10,
+  weightKg: 1,
+  cooBenefit: "No",
+  bcdRate: 10,
+  gstRate: 18,
+  overheadCostInr: 100,
+  amazonSellingPriceInr: 3000,
+  dealPriceRate: 0.1,
+  commissionRate: 0.1,
+  pickPackFeeInr: 10,
+  weightHandlingFeeInr: 20,
+  fixedClosingFeeInr: 30,
+  tdsTcsRate: 0.006,
+};
+const exportMetrics = calculateCatalogProductMetrics(exportProduct, {
+  usdRate: 100,
+  freightPerKgUsd: 4,
+  insuranceRate: 10,
+  bcdRate: 15,
+  swsRate: 10,
+  warehouseRate: 2,
+  amazonCommissionWaiverEnabled: false,
+  amazonCommissionWaiverThresholdInr: 0,
+}, 2700);
+assert.equal(exportMetrics.freightInr, 400);
+assert.equal(exportMetrics.insuranceInr, 140);
+assert.equal(exportMetrics.basicCustomDutyInr, 154);
+assert.ok(Math.abs(exportMetrics.swsInr - 15.4) < 0.000001);
+assert.ok(Math.abs(exportMetrics.igstInr - 307.692) < 0.000001);
+assert.ok(Math.abs(exportMetrics.importCostInr - 1709.4) < 0.000001);
+assert.ok(Math.abs(exportMetrics.landingCost - 1843.588) < 0.000001);
+
+const productWorkbookFixture = createProductWorkbook([exportProduct], () => ({
+  ...exportMetrics,
+  dealPrice: 2700,
+  lifetimeOrderedQuantity: 12,
+}));
 assert.equal(productWorkbookFixture.type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 assert.ok(productWorkbookFixture.size > 1000);
+const productWorkbookText = new TextDecoder().decode(
+  new Uint8Array(await productWorkbookFixture.arrayBuffer()),
+);
+for (const expected of [
+  "USD Rate",
+  "Freight / KG (USD)",
+  "Insurance / Unit (INR)",
+  "Freight / Unit (INR)",
+  "Basic Customs / BCD Calculation (INR)",
+  "SWS (INR)",
+  "IGST (INR)",
+  "Import Cost (INR)",
+  "Landing Cost (INR)",
+  "GST Amazon (INR)",
+  "GST Amazon Deal (INR)",
+  "Settlement Amazon (INR)",
+  "Settlement Amazon Deal (INR)",
+  "Profit Amazon (INR)",
+  "Profit Amazon Deal (INR)",
+]) {
+  assert.ok(productWorkbookText.includes(expected), `Product workbook is missing ${expected}`);
+}
+assert.equal(productWorkbookText.includes("BCD Rate"), false);
 
 for (const expected of [
   "uploadHeaderAliases",

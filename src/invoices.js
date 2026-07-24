@@ -5,13 +5,14 @@ import {
   renderWorkspaceConnectionStatus,
   startWorkspaceConnectionMonitor,
 } from "./connection-status.js";
+import { clearSensitiveBrowserData } from "./browser-storage.js";
 
 const ORDER_HISTORY_STORAGE_KEY = "custom-import-profit-order-history-v1";
 const PRODUCT_STATE_STORAGE_KEY = "custom-import-profit-state-v1";
 
 const app = document.querySelector("#invoice-app");
 let currentUser = null;
-let invoices = loadInvoices();
+let invoices = [];
 let uploadStatus = "";
 let uploadStatusTone = "";
 let editingInvoiceId = null;
@@ -318,6 +319,8 @@ function render() {
 
 async function logout() {
   await request("/api/auth/logout", { method: "POST" }).catch(() => null);
+  clearSensitiveBrowserData();
+  invoices = [];
   window.location.replace("/");
 }
 
@@ -491,6 +494,7 @@ function updatePaymentDetails(event) {
 }
 
 window.addEventListener("storage", () => {
+  if (!currentUser) return;
   invoices = loadInvoices();
   render();
 });
@@ -499,8 +503,11 @@ async function initialize() {
   try {
     const session = await request("/api/auth/session");
     currentUser = session.user;
+    invoices = loadInvoices();
     render();
   } catch {
+    clearSensitiveBrowserData();
+    invoices = [];
     window.location.replace("/");
   }
 }

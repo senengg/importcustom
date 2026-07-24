@@ -2,7 +2,10 @@ import {
   getRequestIp,
   getSupabaseConfiguration,
   insertAuditLog,
+  logServerError,
   readJsonBody,
+  requireJsonRequest,
+  requireTrustedOrigin,
   sendJson,
   setSessionCookies,
   supabaseFetch,
@@ -14,6 +17,7 @@ export default async function handler(request, response) {
     sendJson(response, 405, { error: "Method not allowed." });
     return;
   }
+  if (!requireTrustedOrigin(request, response) || !requireJsonRequest(request, response)) return;
   const configuration = getSupabaseConfiguration();
   if (!configuration) {
     sendJson(response, 503, { error: "Multi-user login is not configured.", code: "AUTH_NOT_CONFIGURED" });
@@ -55,9 +59,12 @@ export default async function handler(request, response) {
     });
     sendJson(response, 200, { user: profile });
   } catch (error) {
-    sendJson(response, error.status === 400 ? 401 : 502, {
-      error: error.status === 400 ? "Incorrect email or password." : "Login is temporarily unavailable.",
-      detail: error.message,
+    logServerError("login", error);
+    const status = error.status === 400 ? 401 : (error.status === 413 ? 413 : 502);
+    sendJson(response, status, {
+      error: status === 401
+        ? "Incorrect email or password."
+        : (status === 413 ? "The login request is too large." : "Login is temporarily unavailable."),
     });
   }
 }

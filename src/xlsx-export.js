@@ -166,6 +166,12 @@ export function createInvoiceWorkbook(invoice, productBySku, normalizeSku) {
 }
 
 export function createProductWorkbook(products, getMetrics) {
+  const rounded = (value, decimals = 2) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    const scale = 10 ** decimals;
+    return Math.round(number * scale) / scale;
+  };
   const headers = [
     "Product Name",
     "Category",
@@ -181,13 +187,25 @@ export function createProductWorkbook(products, getMetrics) {
     "Weight KG",
     "Country of Origin",
     "COO Benefit",
-    "BCD Rate",
     "GST Rate",
+    "USD Rate",
+    "Freight / KG (USD)",
     "Selling Price INR",
     "Deal Discount Percent",
     "Deal Price INR",
-    "Amazon Profit INR",
-    "Amazon Deal Profit INR",
+    "Insurance / Unit (INR)",
+    "Freight / Unit (INR)",
+    "Basic Customs / BCD Calculation (INR)",
+    "SWS (INR)",
+    "IGST (INR)",
+    "Import Cost (INR)",
+    "Landing Cost (INR)",
+    "GST Amazon (INR)",
+    "GST Amazon Deal (INR)",
+    "Settlement Amazon (INR)",
+    "Settlement Amazon Deal (INR)",
+    "Profit Amazon (INR)",
+    "Profit Amazon Deal (INR)",
     "Lifetime Ordered Quantity",
   ];
   const rows = products.map((product) => {
@@ -207,14 +225,26 @@ export function createProductWorkbook(products, getMetrics) {
       Number(product.weightKg) || 0,
       product.countryOfOrigin || "",
       product.cooBenefit || "",
-      Number(product.bcdRate) || 0,
       Number(product.gstRate) || 0,
-      Number(product.amazonSellingPriceInr) || 0,
-      (Number(product.dealPriceRate) || 0) * 100,
-      Number(metrics.dealPrice) || 0,
-      Number(metrics.amazonProfit) || 0,
-      Number(metrics.amazonDealProfit) || 0,
-      Number(metrics.lifetimeOrderedQuantity) || 0,
+      rounded(metrics.usdRate, 4),
+      rounded(metrics.freightPerKgUsd, 4),
+      rounded(product.amazonSellingPriceInr),
+      rounded((Number(product.dealPriceRate) || 0) * 100),
+      rounded(metrics.dealPrice),
+      rounded(metrics.insuranceInr),
+      rounded(metrics.freightInr),
+      rounded(metrics.basicCustomDutyInr),
+      rounded(metrics.swsInr),
+      rounded(metrics.igstInr),
+      rounded(metrics.importCostInr),
+      rounded(metrics.landingCost),
+      rounded(metrics.gstAmazon),
+      rounded(metrics.gstAmazonDeal),
+      rounded(metrics.settlementAmazon),
+      rounded(metrics.settlementAmazonDeal),
+      rounded(metrics.amazonProfit),
+      rounded(metrics.amazonDealProfit),
+      rounded(metrics.lifetimeOrderedQuantity),
     ];
   });
   return createWorkbook([headers, ...rows], "Filtered Products");

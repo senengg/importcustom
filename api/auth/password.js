@@ -1,4 +1,13 @@
-import { getSupabaseConfiguration, readJsonBody, sendJson, setSessionCookies, supabaseFetch } from "../_lib/supabase.js";
+import {
+  getSupabaseConfiguration,
+  logServerError,
+  readJsonBody,
+  requireJsonRequest,
+  requireTrustedOrigin,
+  sendJson,
+  setSessionCookies,
+  supabaseFetch,
+} from "../_lib/supabase.js";
 
 export default async function handler(request, response) {
   if (request.method !== "POST") {
@@ -6,6 +15,7 @@ export default async function handler(request, response) {
     sendJson(response, 405, { error: "Method not allowed." });
     return;
   }
+  if (!requireTrustedOrigin(request, response) || !requireJsonRequest(request, response)) return;
   const configuration = getSupabaseConfiguration();
   if (!configuration) {
     sendJson(response, 503, { error: "Multi-user login is not configured." });
@@ -35,6 +45,11 @@ export default async function handler(request, response) {
     });
     sendJson(response, 200, { user: profiles?.[0] });
   } catch (error) {
-    sendJson(response, 400, { error: "This invitation or recovery link is invalid or expired.", detail: error.message });
+    logServerError("password", error);
+    sendJson(response, error.status === 413 ? 413 : 400, {
+      error: error.status === 413
+        ? "The password request is too large."
+        : "This invitation or recovery link is invalid or expired.",
+    });
   }
 }

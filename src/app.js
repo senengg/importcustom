@@ -13,6 +13,7 @@ import {
   getCanonicalCategoryName,
   getCommissionCategoryKey,
 } from "./category-normalization.js";
+import { clearSensitiveBrowserData } from "./browser-storage.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
 const ORDER_HISTORY_STORAGE_KEY = "custom-import-profit-order-history-v1";
@@ -325,6 +326,9 @@ const authCallback = {
   refreshToken: authCallbackParams.get("refresh_token"),
   type: authCallbackParams.get("type"),
 };
+if (authCallback.accessToken || authCallback.refreshToken) {
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+}
 
 function createDefaultState() {
   return {
@@ -602,6 +606,9 @@ async function initializeAuth() {
     authMessage = "";
   } catch (error) {
     currentUser = null;
+    clearSensitiveBrowserData();
+    state = createDefaultState();
+    localOrderInvoices = [];
     authMessage = error.code === "AUTH_NOT_CONFIGURED"
       ? "Multi-user login needs Supabase configuration in Vercel."
       : "";
@@ -687,9 +694,12 @@ function renderLoginMessage() {
 
 async function logout() {
   await requestApi("/api/auth/logout", { method: "POST" }).catch(() => null);
+  clearSensitiveBrowserData();
   currentUser = null;
   cloudSyncEnabled = false;
   cloudVersion = 0;
+  state = createDefaultState();
+  localOrderInvoices = [];
   authMessage = "You have signed out.";
   render();
 }
@@ -1881,7 +1891,7 @@ function renderCategoryCommissionSection() {
             ${commissionRows
               .map(
                 (row) => `
-                  <option value="${row.id}" ${row.id === selectedMasterCategoryId ? "selected" : ""}>
+                  <option value="${escapeAttribute(row.id)}" ${row.id === selectedMasterCategoryId ? "selected" : ""}>
                     ${escapeHtml(row.category || "Untitled category")}
                   </option>
                 `,
@@ -1996,7 +2006,7 @@ function renderCommissionMasterRow(row) {
         <span>Category</span>
         <div class="input-shell">
           <input
-            data-master-id="${row.id}"
+            data-master-id="${escapeAttribute(row.id)}"
             data-master-field="category"
             data-master-original="${escapeAttribute(row.category)}"
             type="text"
@@ -2008,7 +2018,7 @@ function renderCommissionMasterRow(row) {
         <span>Amazon commission</span>
         <div class="input-shell">
           <input
-            data-master-id="${row.id}"
+            data-master-id="${escapeAttribute(row.id)}"
             data-master-field="commissionRate"
             type="number"
             step="0.001"
@@ -2017,7 +2027,7 @@ function renderCommissionMasterRow(row) {
           <b>%</b>
         </div>
       </label>
-      <button class="icon-button danger master-delete" data-master-delete="${row.id}" title="Delete category" aria-label="Delete category">x</button>
+      <button class="icon-button danger master-delete" data-master-delete="${escapeAttribute(row.id)}" title="Delete category" aria-label="Delete category">x</button>
     </div>
   `;
 }
@@ -2038,7 +2048,7 @@ function renderProductRow(product) {
   const draft = isDraftProduct(product);
   const tone = calc.amazonDealProfitInr >= 0 ? "positive" : "negative";
   return `
-    <button class="product-row ${active} ${draft ? "draft" : ""}" data-select-product="${product.id}" data-product-row="${product.id}">
+    <button class="product-row ${active} ${draft ? "draft" : ""}" data-select-product="${escapeAttribute(product.id)}" data-product-row="${escapeAttribute(product.id)}">
       <span>
         <strong>${escapeHtml(getProductDisplayTitle(product))}</strong>
         <small>SKU: ${escapeHtml(product.sku || "-")} | ASIN: ${escapeHtml(product.asin || "-")} | EAN: ${escapeHtml(product.eanCode || "-")} | HSN: ${escapeHtml(product.hsnCode || "-")}</small>

@@ -69,4 +69,21 @@ const conflict = await invoke("PUT", { state, version: 0 });
 assert.equal(conflict.statusCode, 409);
 assert.equal(conflict.body.code, "VERSION_CONFLICT");
 
+const malicious = await invoke("PUT", {
+  state: {
+    ...state,
+    products: [{
+      id: `bad" onfocus="alert(1)`,
+      productName: "Unsafe",
+    }],
+  },
+  version: 1,
+});
+assert.equal(malicious.statusCode, 400);
+
+profile.role = "viewer";
+const forbidden = await invoke("PUT", { state, version: 1 });
+assert.equal(forbidden.statusCode, 403);
+profile.role = "admin";
+
 console.log("Multi-user shared state API verified.");

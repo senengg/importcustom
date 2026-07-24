@@ -16,6 +16,8 @@ import {
   getSelectedProducts,
   removeSelectedProducts,
 } from "./product-bulk-actions.js";
+import { clearSensitiveBrowserData } from "./browser-storage.js";
+import { calculateCatalogProductMetrics } from "./product-metrics.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
 const ORDER_HISTORY_STORAGE_KEY = "custom-import-profit-order-history-v1";
@@ -30,7 +32,7 @@ let uploadStatus = "";
 let uploadStatusTone = "";
 let selectedProductIds = new Set();
 let bulkDeletePending = false;
-let localOrderInvoices = loadLocalOrderInvoices();
+let localOrderInvoices = [];
 let settings = {
   usdRate: 95.2,
   freightPerKgUsd: 4.5,
@@ -152,70 +154,8 @@ function renderAmazonProductLink(product) {
   `;
 }
 
-function calculateAmazonAmounts(price, product, landingCost) {
-  const gstRate = safeNumber(product.gstRate);
-  const gstOnSellingPrice = price * (gstRate / (100 + gstRate));
-  const waiverApplies =
-    settings.amazonCommissionWaiverEnabled === true &&
-    price > 0 &&
-    price <= safeNumber(settings.amazonCommissionWaiverThresholdInr);
-  const commissionRate = waiverApplies ? 0 : safeNumber(product.commissionRate);
-  const settlement = (
-    price -
-    commissionRate * price -
-    safeNumber(product.pickPackFeeInr) -
-    safeNumber(product.weightHandlingFeeInr) -
-    safeNumber(product.fixedClosingFeeInr) -
-    (price - gstOnSellingPrice) * safeNumber(product.tdsTcsRate)
-  );
-  return {
-    settlement,
-    profit: settlement - gstOnSellingPrice - landingCost,
-  };
-}
-
 function calculateProductMetrics(product) {
-  const domesticProduct = String(product.procurementType || "").trim().toLowerCase() === "india";
-  const productCostUsd = domesticProduct ? 0 : safeNumber(product.productCostUsd);
-  const productCostInr = domesticProduct
-    ? safeNumber(product.productCostInr)
-    : productCostUsd * safeNumber(settings.usdRate);
-  const freightUsd = domesticProduct
-    ? 0
-    : safeNumber(settings.freightPerKgUsd) * safeNumber(product.weightKg);
-  const insuranceUsd = domesticProduct
-    ? 0
-    : (productCostUsd + freightUsd) * (safeNumber(settings.insuranceRate) / 100);
-  const customsBaseUsd = productCostUsd + freightUsd + insuranceUsd;
-  const hasCooBenefit = String(product.cooBenefit || "").trim().toLowerCase() === "yes";
-  const bcdRate = product.bcdRate ?? settings.bcdRate;
-  const basicCustomDutyUsd = domesticProduct || hasCooBenefit
-    ? 0
-    : customsBaseUsd * (safeNumber(bcdRate) / 100);
-  const swsUsd = domesticProduct
-    ? 0
-    : basicCustomDutyUsd * (safeNumber(settings.swsRate) / 100);
-  const importCostUsd = productCostUsd + freightUsd + insuranceUsd + basicCustomDutyUsd + swsUsd;
-  const importCostInr = domesticProduct
-    ? productCostInr
-    : importCostUsd * safeNumber(settings.usdRate);
-  const landingCost = (
-    importCostInr +
-    importCostInr * (safeNumber(settings.warehouseRate) / 100) +
-    safeNumber(product.overheadCostInr)
-  );
-  const amazon = calculateAmazonAmounts(
-    safeNumber(product.amazonSellingPriceInr),
-    product,
-    landingCost,
-  );
-  const deal = calculateAmazonAmounts(getDealPrice(product), product, landingCost);
-  return {
-    landingCost,
-    amazonProfit: amazon.profit,
-    amazonDealProfit: deal.profit,
-    settlement: deal.settlement,
-  };
+  return calculateCatalogProductMetrics(product, settings, getDealPrice(product));
 }
 
 function getStoredState() {
@@ -791,6 +731,7 @@ function bindEvents() {
   document.querySelector("[data-catalog-download]")?.addEventListener("click", handleCatalogDownload);
   document.querySelector("[data-catalog-logout]")?.addEventListener("click", async () => {
     await request("/api/auth/logout", { method: "POST" }).catch(() => null);
+    clearSensitiveBrowserData();
     window.location.replace("/");
   });
 }
@@ -874,17 +815,18 @@ function render() {
 }
 
 async function initialize() {
-  const stored = getStoredState();
-  products = stored?.products || [];
-  settings = { ...settings, ...(stored?.settings || {}) };
-  stateDocument = stored || {
-    settings: { ...settings },
-    commissionMaster: [],
-    products,
-  };
   try {
     const session = await request("/api/auth/session");
     currentUser = session.user;
+    const stored = getStoredState();
+    products = stored?.products || [];
+    settings = { ...settings, ...(stored?.settings || {}) };
+    stateDocument = stored || {
+      settings: { ...settings },
+      commissionMaster: [],
+      products,
+    };
+    localOrderInvoices = loadLocalOrderInvoices();
     try {
       const cloud = await request("/api/state");
       cloudVersion = Number(cloud.version || 0);
@@ -896,13 +838,14 @@ async function initialize() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(cloud.state));
       }
     } catch {
-      // Local review can use the browser's saved product state.
+      // An authenticated user may temporarily use the browser's saved product state.
     }
   } catch {
-    if (!products.length) {
-      window.location.replace("/");
-      return;
-    }
+    clearSensitiveBrowserData();
+    products = [];
+    stateDocument = null;
+    window.location.replace("/");
+    return;
   }
   render();
 }
