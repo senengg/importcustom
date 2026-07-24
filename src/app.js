@@ -8,6 +8,11 @@ import {
   renderWorkspaceConnectionStatus,
   startWorkspaceConnectionMonitor,
 } from "./connection-status.js";
+import {
+  getCanonicalCategoryFromRows,
+  getCanonicalCategoryName,
+  getCommissionCategoryKey,
+} from "./category-normalization.js";
 
 const STORAGE_KEY = "custom-import-profit-state-v1";
 const ORDER_HISTORY_STORAGE_KEY = "custom-import-profit-order-history-v1";
@@ -1278,22 +1283,58 @@ function getDraftCommissionMaster() {
   return masterDraft?.commissionMaster || state.commissionMaster;
 }
 
+function sortCommissionRowsAlphabetically(rows) {
+  return [...rows].sort((a, b) =>
+    String(a.category || "").localeCompare(String(b.category || ""), undefined, {
+      sensitivity: "base",
+    }),
+  );
+}
+
+function findDuplicateCommissionCategory(rows) {
+  const known = new Set();
+
+  for (const row of rows) {
+    const category = String(row.category || "").trim();
+    const key = getCommissionCategoryKey(category);
+    if (!key) continue;
+    if (known.has(key)) return category;
+    known.add(key);
+  }
+
+  return "";
+}
+
 function normalizeCommissionMaster(masterRows, products = []) {
   const rows = Array.isArray(masterRows) ? masterRows : [];
+  const known = new Set();
+  const canonicalByKey = new Map();
   const normalized = rows
     .map((row) => ({
       id: row.id || crypto.randomUUID(),
-      category: String(row.category || "").trim(),
+      category: getCanonicalCategoryName(row.category),
       commissionRate: safeNumber(row.commissionRate),
     }))
-    .filter((row) => row.category);
-  const known = new Set(normalized.map((row) => row.category.toLowerCase()));
+    .filter((row) => {
+      const key = getCommissionCategoryKey(row.category);
+      if (!key || known.has(key)) return false;
+      known.add(key);
+      canonicalByKey.set(key, row.category);
+      return true;
+    });
 
   products.forEach((product) => {
-    const category = String(product.category || "").trim();
-    if (category && !known.has(category.toLowerCase())) {
+    const category = getCanonicalCategoryName(product.category);
+    const key = getCommissionCategoryKey(category);
+    if (!key) return;
+
+    if (known.has(key)) {
+      product.category = canonicalByKey.get(key);
+    } else {
       normalized.push(createCommissionRow(category, safeNumber(product.commissionRate) || 0.105));
-      known.add(category.toLowerCase());
+      known.add(key);
+      canonicalByKey.set(key, category);
+      product.category = category;
     }
   });
 
@@ -1301,13 +1342,18 @@ function normalizeCommissionMaster(masterRows, products = []) {
 }
 
 function getKnownCategories() {
-  return [...new Set(
-    [
-      ...state.commissionMaster.map((row) => String(row.category || "").trim()),
-      ...state.products.map((product) => String(product.category || "").trim()),
-    ]
-      .filter(Boolean),
-  )].sort((a, b) => a.localeCompare(b));
+  const categoriesByKey = new Map();
+  [
+    ...state.commissionMaster.map((row) => row.category),
+    ...state.products.map((product) => product.category),
+  ].forEach((category) => {
+    const canonicalCategory = getCanonicalCategoryName(category);
+    const key = getCommissionCategoryKey(canonicalCategory);
+    if (key && !categoriesByKey.has(key)) {
+      categoriesByKey.set(key, canonicalCategory);
+    }
+  });
+  return [...categoriesByKey.values()].sort((a, b) => a.localeCompare(b));
 }
 
 function getKnownCountries() {
@@ -1331,14 +1377,15 @@ function getLatestCountryOfOrigin() {
 }
 
 function getCommissionForCategory(category) {
-  const normalizedCategory = String(category || "").trim().toLowerCase();
+  const normalizedCategory = getCommissionCategoryKey(category);
   const match = state.commissionMaster.find(
-    (row) => String(row.category || "").trim().toLowerCase() === normalizedCategory,
+    (row) => getCommissionCategoryKey(row.category) === normalizedCategory,
   );
   return match ? safeNumber(match.commissionRate) : null;
 }
 
 function applyCommissionForProductCategory(product) {
+  product.category = getCanonicalCategoryFromRows(product.category, state.commissionMaster);
   const commissionRate = getCommissionForCategory(product.category);
   if (commissionRate !== null) {
     product.commissionRate = commissionRate;
@@ -1816,7 +1863,7 @@ function renderAmazonCommissionWaiverSection() {
 
 function renderCategoryCommissionSection() {
   const selectedRow = getSelectedCommissionRow();
-  const commissionRows = getDraftCommissionMaster();
+  const commissionRows = sortCommissionRowsAlphabetically(getDraftCommissionMaster());
 
   return `
     <section class="master-section">
@@ -2996,12 +3043,19 @@ function handleMasterInput(event) {
 
 function saveMasterDraft() {
   ensureMasterDraft();
+  const duplicateCategory = findDuplicateCommissionCategory(masterDraft.commissionMaster);
+  if (duplicateCategory) {
+    masterDraftMessage = `"${duplicateCategory}" already exists. Use each category name only once.`;
+    render();
+    return;
+  }
+
   const savedSelectedId = selectedMasterCategoryId;
   const previousById = new Map(state.commissionMaster.map((row) => [row.id, row]));
   const draftRows = masterDraft.commissionMaster
     .map((row) => ({
       id: row.id || crypto.randomUUID(),
-      category: String(row.category || "").trim(),
+      category: getCanonicalCategoryName(row.category),
       commissionRate: safeNumber(row.commissionRate),
     }))
     .filter((row) => row.category);
@@ -3014,7 +3068,7 @@ function saveMasterDraft() {
     state.products
       .filter(
         (product) =>
-          String(product.category || "").trim().toLowerCase() === originalCategory.toLowerCase(),
+          getCommissionCategoryKey(product.category) === getCommissionCategoryKey(originalCategory),
       )
       .forEach((product) => {
         product.category = nextCategory;
@@ -3037,8 +3091,7 @@ function saveMasterDraft() {
     state.products
       .filter(
         (product) =>
-          String(product.category || "").trim().toLowerCase() ===
-          String(row.category || "").trim().toLowerCase(),
+          getCommissionCategoryKey(product.category) === getCommissionCategoryKey(row.category),
       )
       .forEach((product) => {
         product.commissionRate = safeNumber(row.commissionRate);
@@ -3175,6 +3228,16 @@ async function handleAction(action) {
 
   if (action === "add-master-category") {
     ensureMasterDraft();
+    const existingNewRow = masterDraft.commissionMaster.find(
+      (row) => getCommissionCategoryKey(row.category) === "new category",
+    );
+    if (existingNewRow) {
+      selectedMasterCategoryId = existingNewRow.id;
+      masterDraftMessage = "Rename New Category before adding another category.";
+      render();
+      return;
+    }
+
     const newRow = createCommissionRow("New Category", 0.105);
     masterDraft.commissionMaster.push(newRow);
     selectedMasterCategoryId = newRow.id;

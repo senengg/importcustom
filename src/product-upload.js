@@ -1,4 +1,8 @@
 import { calculateSellingPriceFromDeal } from "./pricing.js";
+import {
+  getCanonicalCategoryFromRows,
+  getCommissionCategoryKey,
+} from "./category-normalization.js";
 
 const uploadHeaderAliases = {
   product: "productName",
@@ -133,7 +137,7 @@ function latestProductValue(products, field, fallback = "") {
 
 function categoryCommission(category, commissionMaster) {
   const row = (commissionMaster || []).find(
-    (item) => text(item.category).toLowerCase() === text(category).toLowerCase(),
+    (item) => getCommissionCategoryKey(item.category) === getCommissionCategoryKey(category),
   );
   return row ? safeNumber(row.commissionRate) : 0.105;
 }
@@ -180,7 +184,10 @@ function createUploadedProduct(values, state) {
   const source = procurementType(
     text(values.procurementType) || (country.toLowerCase() === "india" ? "India" : "Import"),
   );
-  const category = text(values.category) || latestProductValue(products, "category", "Uncategorised");
+  const category = getCanonicalCategoryFromRows(
+    text(values.category) || latestProductValue(products, "category", "Uncategorised"),
+    state.commissionMaster,
+  );
   const uploadedCost = number(values.productCostUsd);
   const sellingPrice = getUploadedSellingPrice(values);
   const rate = discountRate(values.dealPriceRate);
