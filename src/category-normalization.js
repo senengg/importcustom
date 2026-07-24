@@ -1,5 +1,8 @@
 const canonicalCategoryNames = new Map([
   ["mobile accessory", "Mobile Accessories"],
+  ["mobile screen protector", "Mobile Screen Protector"],
+  ["tablet screen protector", "Tablet Screen Protector"],
+  ["watch screen protector", "Watch Screen Protector"],
 ]);
 
 export function getCommissionCategoryKey(category) {
@@ -8,7 +11,8 @@ export function getCommissionCategoryKey(category) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ")
-    .replace(/\baccessories?\b/g, "accessory");
+    .replace(/\baccessories?\b/g, "accessory")
+    .replace(/\bscreen protectors\b/g, "screen protector");
 }
 
 export function getCanonicalCategoryName(category) {
