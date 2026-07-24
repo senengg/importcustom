@@ -806,7 +806,6 @@ function render() {
             <span class="catalog-count-pill" data-catalog-count aria-live="polite"></span>
           </div>
           <div class="catalog-filter-actions">
-            <button class="ghost-button compact" data-catalog-reset type="button">Reset filters</button>
             <label class="ghost-button compact file-button catalog-upload" title="Upload Excel">
               Upload Excel
               <input
@@ -832,6 +831,11 @@ function render() {
             <span>Select all filtered products</span>
           </label>
           <span class="catalog-selected-count" data-catalog-selected-count>0 selected</span>
+          <button
+            class="ghost-button compact catalog-reset-button"
+            data-catalog-reset
+            type="button"
+          >Reset filters</button>
           ${canManageProducts() ? `
             <button
               class="bulk-delete-button"

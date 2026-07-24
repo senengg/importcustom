@@ -2285,6 +2285,14 @@ tbody tr:hover {
   font-weight: 700;
 }
 
+.catalog-reset-button {
+  margin-left: auto;
+}
+
+.catalog-reset-button + .bulk-delete-button {
+  margin-left: 0;
+}
+
 .bulk-delete-button {
   min-height: 34px;
   margin-left: auto;
